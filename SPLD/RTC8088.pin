@@ -1,0 +1,25 @@
+
+
+ Pin # | Name     | Pin Type
+-----------------------------
+   1   | A0       | Input
+   2   | A2       | Input
+   3   | A3       | Input
+   4   | A4       | Input
+   5   | A5       | Input
+   6   | A6       | Input
+   7   | A7       | Input
+   8   | A8       | Input
+   9   | A9       | Input
+  10   | GND      | GND
+  11   | IRQ      | Input
+  12   | IOW      | Input
+  13   | IOR      | Input
+  14   | RTCALE   | Output
+  15   | RTCWR    | Output
+  16   | RTCRD    | Output
+  17   | AEN      | Input
+  18   | IRQOUT   | Output
+  19   | NC       | NC
+  20   | VCC      | VCC
+
