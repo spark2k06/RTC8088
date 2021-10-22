@@ -16,3 +16,12 @@ DESCRIPTION
 
 
 This is the logic of decoding the port address and signals used by the RTC based on DS12885.
+
+Default (070h): /A2 * /A3 * A4 * A5 * A6 * /A7 * /A8 * /A9
+
+Others configurations:
+
+240h: /A2 * /A3 * /A4 * /A5 * A6 * /A7 * /A8 * A9
+2A0h: /A2 * /A3 * /A4 * A5 * /A6 * A7 * /A8 * A9
+2C0h: /A2 * /A3 * /A4 * /A5 * A6 * A7 * /A8 * A9
+340h: /A2 * /A3 * /A4 * /A5 * A6 * /A7 * A8 * A9
