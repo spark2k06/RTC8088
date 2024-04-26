@@ -1,27 +1,48 @@
 GAL16V8   ;  Works with GAL16V8B and ATF16V8B
-RTC8088   ;  RTC 8088, Production version 1
+RTC_V2    ;  RTC 8088, Production version 2
 
 A0	A2	A3	A4	A5	A6	A7	A8	A9	GND
-IRQ IOW IOR RTCALE	RTCWR RTCRD AEN	IRQOUT	NC	VCC
+AS2 	IOW	IOR	RTCALE	RTCWR	RTCRD	AEN	AS1	AS0	VCC
 
-/IRQOUT = IRQ
+/RTCRD	= /IOR *  A0 * /AEN * /A2 * /A3 *  A4 *  A5 *  A6 * /A7 * /A8 * /A9 *  AS2 *  AS1 *  AS0
+	+ /IOR *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 * /A8 *  A9 *  AS2 *  AS1 * /AS0
+	+ /IOR *  A0 * /AEN * /A2 * /A3 * /A4 *  A5 * /A6 *  A7 * /A8 *  A9 *  AS2 * /AS1 *  AS0
+	+ /IOR *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 *  A8 *  A9 *  AS2 * /AS1 * /AS0
+	+ /IOR *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 *  A8 *  A9 * /AS2 *  AS1 *  AS0
+	+ /IOR *  A0 * /AEN * /A2 * /A3 * /A4 *  A5 * /A6 *  A7 *  A8 *  A9 * /AS2 *  AS1 * /AS0
+	+ /IOR *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 *  A7 *  A8 *  A9 * /AS2 * /AS1 *  AS0
+	+ /IOR *  A0 * /AEN * /A2 * /A3 *  A4 *  A5 *  A6 * /A7 * /A8 * /A9 * /AS2 * /AS1 * /AS0
 
-/RTCRD = /IOR * A0 * /AEN * /A2 * /A3 * A4 * A5 * A6 * /A7 * /A8 * /A9
+/RTCWR	= /IOW *  A0 * /AEN * /A2 * /A3 *  A4 *  A5 *  A6 * /A7 * /A8 * /A9 *  AS2 *  AS1 *  AS0
+	+ /IOW *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 * /A8 *  A9 *  AS2 *  AS1 * /AS0
+	+ /IOW *  A0 * /AEN * /A2 * /A3 * /A4 *  A5 * /A6 *  A7 * /A8 *  A9 *  AS2 * /AS1 *  AS0
+	+ /IOW *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 *  A8 *  A9 *  AS2 * /AS1 * /AS0
+	+ /IOW *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 *  A8 *  A9 * /AS2 *  AS1 *  AS0
+	+ /IOW *  A0 * /AEN * /A2 * /A3 * /A4 *  A5 * /A6 *  A7 *  A8 *  A9 * /AS2 *  AS1 * /AS0
+	+ /IOW *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 *  A7 *  A8 *  A9 * /AS2 * /AS1 *  AS0
+	+ /IOW *  A0 * /AEN * /A2 * /A3 *  A4 *  A5 *  A6 * /A7 * /A8 * /A9 * /AS2 * /AS1 * /AS0
 
-/RTCWR = /IOW * A0 * /AEN * /A2 * /A3 * A4 * A5 * A6 * /A7 * /A8 * /A9
-
-RTCALE = /IOW * /A0 * /AEN * /A2 * /A3 * A4 * A5 * A6 * /A7 * /A8 * /A9
+RTCALE	= /IOW * /A0 * /AEN * /A2 * /A3 *  A4 *  A5 *  A6 * /A7 * /A8 * /A9 *  AS2 *  AS1 *  AS0
+	+ /IOW * /A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 * /A8 *  A9 *  AS2 *  AS1 * /AS0
+	+ /IOW * /A0 * /AEN * /A2 * /A3 * /A4 *  A5 * /A6 *  A7 * /A8 *  A9 *  AS2 * /AS1 *  AS0
+	+ /IOW * /A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 *  A8 *  A9 *  AS2 * /AS1 * /AS0
+	+ /IOW * /A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 *  A8 *  A9 * /AS2 *  AS1 *  AS0
+	+ /IOW * /A0 * /AEN * /A2 * /A3 * /A4 *  A5 * /A6 *  A7 *  A8 *  A9 * /AS2 *  AS1 * /AS0
+	+ /IOW * /A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 *  A7 *  A8 *  A9 * /AS2 * /AS1 *  AS0
+	+ /IOW * /A0 * /AEN * /A2 * /A3 *  A4 *  A5 *  A6 * /A7 * /A8 * /A9 * /AS2 * /AS1 * /AS0
 
 DESCRIPTION
 
 
-This is the logic of decoding the port address and signals used by the RTC based on DS12885.
+This is the logic for decoding the port address and generating control signals
+used by the RTC based on DS12885.
 
-Default (070h): /A2 * /A3 * A4 * A5 * A6 * /A7 * /A8 * /A9
+0x70:  (AS0 = 1, AS1 = 1, AS2 = 1): /A2 * /A3 *  A4 *  A5 *  A6 * /A7 * /A8 * /A9
+0x240: (AS0 = 0, AS1 = 1, AS2 = 1): /A2 * /A3 * /A4 * /A5 *  A6 * /A7 * /A8 *  A9
+0x2A0: (AS0 = 1, AS1 = 0, AS2 = 1): /A2 * /A3 * /A4 *  A5 * /A6 *  A7 * /A8 *  A9
+0x2C0: (AS0 = 0, AS1 = 0, AS2 = 1): /A2 * /A3 * /A4 * /A5 *  A6 *  A7 * /A8 *  A9
+0x340: (AS0 = 1, AS1 = 1, AS2 = 0): /A2 * /A3 * /A4 * /A5 *  A6 * /A7 *  A8 *  A9
+0x3A0: (AS0 = 0, AS1 = 1, AS2 = 0): /A2 * /A3 * /A4 *  A5 * /A6 *  A7 *  A8 *  A9
+0x3C0: (AS0 = 1, AS1 = 0, AS2 = 0): /A2 * /A3 * /A4 * /A5 *  A6 *  A7 *  A8 *  A9
+0x70:  (AS0 = 0, AS1 = 0, AS2 = 0): /A2 * /A3 *  A4 *  A5 *  A6 * /A7 * /A8 * /A9
 
-Others configurations:
-
-240h: /A2 * /A3 * /A4 * /A5 * A6 * /A7 * /A8 * A9
-2A0h: /A2 * /A3 * /A4 * A5 * /A6 * A7 * /A8 * A9
-2C0h: /A2 * /A3 * /A4 * /A5 * A6 * A7 * /A8 * A9
-340h: /A2 * /A3 * /A4 * /A5 * A6 * /A7 * A8 * A9
