@@ -11,6 +11,31 @@ Real Time Clock for your PC XT. Very low profile, simple and open hardware.
 
 [PCB Layout - Version 3.0](KiCad/RTC8088-Board-3.0.pdf)
 
+### Swiches and Jumpers
+
+#### SW1 - RTC I/O address select
+
+I/O Address  | SW1.1 | SW 1.2 | SW 1.3
+------------ | ----- | ------ | ------
+0x70         | OFF   | OFF    | OFF
+0x240        | ON    | OFF    | OFF
+0x2A0        | OFF   | ON     | OFF
+0x2C0        | ON    | ON     | OFF
+0x340        | OFF   | OFF    | ON
+0x3A0        | ON    | OFF    | ON
+0x3C0        | OFF   | ON     | ON
+User Defined | ON    | ON     | ON
+
+* Note 1: The table above gives the addresses in the supplied SPLD fuse map. The selection can be changed by reprogramming the SPLD
+* Note 2: "User Defined" address is set to 0x70 in the supplied SPLD fuse map. It is recommended to use this setting when adding a custom I/O address to the SPLD
+
+#### JP1 - Clear CMOS
+
+Position       | Description
+-------------- | -----------------
+open (default) | Normal operation
+closed         | Clear NVRAM memory
+
 ### Bill of Materials
 
 #### Version 3.0
@@ -34,6 +59,38 @@ Pin Header         | JP1       | 2 pin header, 2.54 mm pitch                    
 Jumper             | JP1       | Shunt, 2 pin, 2.54 mm pitch                     | 1        | Mouser [806-SX1100-B](https://www.mouser.com/ProductDetail/806-SX1100-B)
 IC Socket          | U1        | 20 pin DIP, 2.54 mm pitch, 7.62 mm row spacing  | 1        | Mouser [649-DILB20P-223TLF](https://www.mouser.com/ProductDetail/649-DILB20P-223TLF)
 IC Socket          | U2        | 24 pin DIP, 2.54 mm pitch, 15.24 mm row spacing | 1        | Mouser [649-DILB20P-223TLF](https://www.mouser.com/ProductDetail/649-DILB20P-223TLF)
+
+## Software
+
+The board is supported by the [8088 BIOS](https://github.com/skiselev/8088_bios) and [GLaTICK BIOS Extension](https://github.com/640-KB/GLaTICK).
+
+## Release Notes
+
+### Changes
+
+* Version 3.0
+  * Add I/O address configuration switches
+  * Remove IRQ configuration jumpers and IRQ support
+* Version 2.0
+  * Aitor RTC8088
+* Version 1.0
+  * Initial version
+
+### Known Issues
+
+* No known issues
+
+### Wishlist
+
+* None so far
+
+## Red Tape
+
+### Licensing
+
+RTC8088 is an open source hardware project. The hardware design itself, including schematic and PCB layout design files are licensed under the strongly-reciprocal variant of [CERN Open Hardware Licence version 2](license-cern_ohl_s_v2.txt). The CPLD VHDL code is licensed under [GNU General Public License v3](license-gpl-3.0.txt). Documentation, including this file, is licensed under the [Creative Commons Attribution-ShareAlike 4.0 International License](license-cc-by-sa-4.0.txt).
+
+![CERN-OHL-2.0-S, GPL-3.0, CC-BY-SA-4.0](images/CERN-OHL-2.0-S_GPL-3.0-only_CC-BY-SA-4.0.svg)
 
 ## More information
 
