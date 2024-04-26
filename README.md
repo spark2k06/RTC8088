@@ -15,6 +15,10 @@ Real Time Clock for your PC XT. Very low profile, simple and open hardware.
 
 #### Version 3.0
 
+[RTC8088 project on Mouser.com](https://www.mouser.com/ProjectManager/ProjectDetail.aspx?AccessID=2877d21cfa) - View and order all components except of the FDC and the PCB.
+
+[RTC8088 on OSH Park](https://oshpark.com/shared_projects/WwFhFFe9) - View and order the PCB.
+
 Component type     | Reference | Description                                     | Quantity | Possible sources and notes 
 ------------------ | --------- | ----------------------------------------------- | -------- | --------------------------
 PCB                |           | RTC8088 PCB - Version 3.0                       | 1        | Order from your favorite PCB manufacturer using provided Gerber files
