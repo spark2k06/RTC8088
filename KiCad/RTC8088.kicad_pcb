@@ -2569,7 +2569,7 @@
     (at 130.81 82.8675 180)
     (descr "Open Source Hardware Symbol")
     (tags "Logo Symbol OSHW")
-    (attr exclude_from_pos_files exclude_from_bom)
+    (attr board_only exclude_from_pos_files exclude_from_bom)
     (fp_text reference "REF**" (at 0 0) (layer "B.SilkS") hide
       (effects (font (size 1 1) (thickness 0.15)) (justify mirror))
       (tstamp e3329d63-e585-45c6-a33a-d4a1283af957)
