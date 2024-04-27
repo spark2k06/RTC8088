@@ -24,10 +24,10 @@ I/O Address  | SW1.1 | SW 1.2 | SW 1.3
 0x340        | OFF   | OFF    | ON
 0x3A0        | ON    | OFF    | ON
 0x3C0        | OFF   | ON     | ON
-User Defined | ON    | ON     | ON
+Reserved     | ON    | ON     | ON
 
 * Note 1: The table above gives the addresses in the supplied SPLD fuse map. The selection can be changed by reprogramming the SPLD
-* Note 2: "User Defined" address is set to 0x70 in the supplied SPLD fuse map. It is recommended to use this setting when adding a custom I/O address to the SPLD
+* Note 2: "Reserved" address is set to 0x70 in the supplied SPLD fuse map. It is recommended to use this setting when adding a custom I/O address to the SPLD
 
 #### JP1 - Clear CMOS
 
