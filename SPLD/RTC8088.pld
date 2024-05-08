@@ -7,7 +7,7 @@ AS2 	IOW	IOR	RTCALE	RTCWR	RTCRD	AEN	AS1	AS0	VCC
 /RTCRD	= /IOR *  A0 * /AEN * /A2 * /A3 *  A4 *  A5 *  A6 * /A7 * /A8 * /A9 *  AS2 *  AS1 *  AS0
 	+ /IOR *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 * /A8 *  A9 *  AS2 *  AS1 * /AS0
 	+ /IOR *  A0 * /AEN * /A2 * /A3 * /A4 *  A5 * /A6 *  A7 * /A8 *  A9 *  AS2 * /AS1 *  AS0
-	+ /IOR *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 *  A8 *  A9 *  AS2 * /AS1 * /AS0
+	+ /IOR *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 *  A7 * /A8 *  A9 *  AS2 * /AS1 * /AS0
 	+ /IOR *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 *  A8 *  A9 * /AS2 *  AS1 *  AS0
 	+ /IOR *  A0 * /AEN * /A2 * /A3 * /A4 *  A5 * /A6 *  A7 *  A8 *  A9 * /AS2 *  AS1 * /AS0
 	+ /IOR *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 *  A7 *  A8 *  A9 * /AS2 * /AS1 *  AS0
@@ -16,7 +16,7 @@ AS2 	IOW	IOR	RTCALE	RTCWR	RTCRD	AEN	AS1	AS0	VCC
 /RTCWR	= /IOW *  A0 * /AEN * /A2 * /A3 *  A4 *  A5 *  A6 * /A7 * /A8 * /A9 *  AS2 *  AS1 *  AS0
 	+ /IOW *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 * /A8 *  A9 *  AS2 *  AS1 * /AS0
 	+ /IOW *  A0 * /AEN * /A2 * /A3 * /A4 *  A5 * /A6 *  A7 * /A8 *  A9 *  AS2 * /AS1 *  AS0
-	+ /IOW *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 *  A8 *  A9 *  AS2 * /AS1 * /AS0
+	+ /IOW *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 *  A7 * /A8 *  A9 *  AS2 * /AS1 * /AS0
 	+ /IOW *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 *  A8 *  A9 * /AS2 *  AS1 *  AS0
 	+ /IOW *  A0 * /AEN * /A2 * /A3 * /A4 *  A5 * /A6 *  A7 *  A8 *  A9 * /AS2 *  AS1 * /AS0
 	+ /IOW *  A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 *  A7 *  A8 *  A9 * /AS2 * /AS1 *  AS0
@@ -25,7 +25,7 @@ AS2 	IOW	IOR	RTCALE	RTCWR	RTCRD	AEN	AS1	AS0	VCC
 RTCALE	= /IOW * /A0 * /AEN * /A2 * /A3 *  A4 *  A5 *  A6 * /A7 * /A8 * /A9 *  AS2 *  AS1 *  AS0
 	+ /IOW * /A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 * /A8 *  A9 *  AS2 *  AS1 * /AS0
 	+ /IOW * /A0 * /AEN * /A2 * /A3 * /A4 *  A5 * /A6 *  A7 * /A8 *  A9 *  AS2 * /AS1 *  AS0
-	+ /IOW * /A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 *  A8 *  A9 *  AS2 * /AS1 * /AS0
+	+ /IOW * /A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 *  A7 * /A8 *  A9 *  AS2 * /AS1 * /AS0
 	+ /IOW * /A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 * /A7 *  A8 *  A9 * /AS2 *  AS1 *  AS0
 	+ /IOW * /A0 * /AEN * /A2 * /A3 * /A4 *  A5 * /A6 *  A7 *  A8 *  A9 * /AS2 *  AS1 * /AS0
 	+ /IOW * /A0 * /AEN * /A2 * /A3 * /A4 * /A5 *  A6 *  A7 *  A8 *  A9 * /AS2 * /AS1 *  AS0

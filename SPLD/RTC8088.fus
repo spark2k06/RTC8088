@@ -1,82 +1,82 @@
 
 
 Pin 19 = AS0          XOR = 0   AC1 = 1
-  0  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
-  1  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
-  2  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
-  3  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
-  4  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
-  5  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
-  6  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
-  7  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+  0  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+  1  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+  2  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+  3  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+  4  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+  5  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+  6  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+  7  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
 
 Pin 18 = AS1          XOR = 0   AC1 = 1
-  8  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
-  9  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 10  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 11  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 12  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 13  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 14  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 15  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+  8  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+  9  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 10  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 11  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 12  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 13  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 14  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 15  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
 
 Pin 17 = AEN          XOR = 0   AC1 = 1
- 16  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 17  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 18  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 19  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 20  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 21  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 22  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 23  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 16  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 17  xxxx xxxx xxxx xxxx xxxx -xx- -xx- x-x- x--x x--- -x-x
+ 18  -x-- -xx- -xx- -x-x -xx- -x-x x--- -x-x -x-- x-x- -xx-
+ 19  -xx- -x-x x--x -x-- x--x -x-- x-x- -xx- -x-x -x-x -x-x
+ 20  x--- x--x -x-- x-x- -xx- -xx- -xx- -x-x x--- -x-x x---
+ 21  x--x -xx- -x-x -xx- x--x -x-- x--x x--- x--x -xx- -xx-
+ 22  -x-x -x-x x--- x--x x--- x--x -xx- -x-x x--x x--x x---
+ 23  -x-x -x-- -x-x -xx- -xx- x-x- x--x x--- -x-- -x-x -xx-
 
 Pin 16 = RTCRD        XOR = 0   AC1 = 0
- 24  -xx- -xx- x-x- x--x x--- -x-x -x-- -xx-
- 25  -xx- -x-x -xx- -x-x x--- -x-x -x-- x-x-
- 26  -xx- -xx- -x-x x--x -x-- x--x -x-- x-x-
- 27  -xx- -x-x -x-x -x-x x--- -x-x x--- x-x-
- 28  -xx- -xx- -xx- -x-x x--- -x-x x--- x--x
- 29  -xx- -x-x -xx- x--x -x-- x--x x--- x--x
- 30  -xx- -xx- -x-x -x-x x--- x--x x--- x--x
- 31  -xx- -x-x x--x x--x x--- -x-x -x-- -x-x
+ 24  -xx- -x-x -xx- -x-x x--- -x-- -x-x x-x- -xx- -xx- -x-x
+ 25  x--x -x-- x--- -x-x x-x- -xx- -x-x -x-x -x-x x--- x---
+ 26  -x-x x-x- -xx- -xx- -xx- -x-x x--- -x-- x--x x--x -xx-
+ 27  -x-x -xx- x--x -x-- x--- x--x x--x -xx- -xx- -x-x -x-x
+ 28  x--- x--- x--x x--x -xx- -x-x x--x x--x x--- -x-- -x-x
+ 29  -x-x -x-x -xx- x-x- x--x x--- -x-- -x-x -xx- -x-x -x-x
+ 30  -xx- -x-x x--- -x-- -x-x x-x- -x-x -xx- -x-x x--x -x--
+ 31  x--- -x-x x-x- -x-x -x-x -x-x -x-x x--- x--- -x-x x-x-
 
 Pin 15 = RTCWR        XOR = 0   AC1 = 0
- 32  -xx- -xx- x-x- x--x x--- -x-- -x-x -xx-
- 33  -xx- -x-x -xx- -x-x x--- -x-- -x-x x-x-
- 34  -xx- -xx- -x-x x--x -x-- x--- -x-x x-x-
- 35  -xx- -x-x -x-x -x-x x--- -x-- x--x x-x-
- 36  -xx- -xx- -xx- -x-x x--- -x-- x--x x--x
- 37  -xx- -x-x -xx- x--x -x-- x--- x--x x--x
- 38  -xx- -xx- -x-x -x-x x--- x--- x--x x--x
- 39  -xx- -x-x x--x x--x x--- -x-- -x-x -x-x
+ 32  -x-x -xx- -xx- -x-x x--- -x-- x--x x--x -x-x -x-x -xx-
+ 33  x--x -x-- x--- x--x x--x -x-x -xx- -x-x -x-x x--- x---
+ 34  x--x x--x -x-x -x-x x--x x--x x--- -x-- -x-x -x-x xxxx
+ 35  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 36  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 37  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 38  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 39  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
 
 Pin 14 = RTCALE       XOR = 1   AC1 = 0
- 40  -x-x -xx- x-x- x--x x--- -x-- -x-x -xx-
- 41  -x-x -x-x -xx- -x-x x--- -x-- -x-x x-x-
- 42  -x-x -xx- -x-x x--x -x-- x--- -x-x x-x-
- 43  -x-x -x-x -x-x -x-x x--- -x-- x--x x-x-
- 44  -x-x -xx- -xx- -x-x x--- -x-- x--x x--x
- 45  -x-x -x-x -xx- x--x -x-- x--- x--x x--x
- 46  -x-x -xx- -x-x -x-x x--- x--- x--x x--x
- 47  -x-x -x-x x--x x--x x--- -x-- -x-x -x-x
+ 40  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 41  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 42  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 43  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 44  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 45  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 46  xxxx xxxx xxxx xxxx xxxx xxxx ---- ---- ---- ---- ----
+ 47  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
 
 Pin 13 = IOR          XOR = 0   AC1 = 1
- 48  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 49  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 50  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 51  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 52  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 53  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 54  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 55  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 48  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
+ 49  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
+ 50  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
+ 51  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
+ 52  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
+ 53  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
+ 54  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
+ 55  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
 
 Pin 12 = IOW          XOR = 0   AC1 = 1
- 56  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 57  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 58  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 59  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 60  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 61  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 62  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
- 63  xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+ 56  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
+ 57  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
+ 58  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
+ 59  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
+ 60  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
+ 61  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
+ 62  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
+ 63  ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
 
