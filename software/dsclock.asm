@@ -113,7 +113,6 @@ device_header	dw	0FFFFh, 0FFFFh	; next device pointer - last device
 ;-------------------------------------------------------------------------
 request_ptr	dd	0		; pointer to the request header
 rtc_io_port	dw	0240h		; use I/O port 240h by default
-dse		db	0		; DSE flag: 0 - disable; 1 - enable
 seconds		db	cmos_seconds,0	; last seconds value read or written
 minutes		db	cmos_minutes,0	; last minutes value read or written
 hours		db	cmos_hours,0	; last hours value read or written
@@ -417,7 +416,6 @@ write:
 ;=========================================================================
 ; rtc_set - Set real time clock
 ; Input:
-;	cs:[dse] - DSE flag
 ;	cs:[seconds] - pairs of the RTC register number + RTC value
 ; Output:
 ;	None
@@ -433,10 +431,6 @@ rtc_set:
 	call	rtc_read		; read control B register
 	mov	ah,al
 	or	ah,cmos_set		; set the RTC set bit
-	mov	al,cmos_control_b
-	call	rtc_write		; write control B register
-
-	or	ah,[dse]		; set DSE flag from the data area
 	mov	al,cmos_control_b
 	call	rtc_write		; write control B register
 
@@ -471,7 +465,6 @@ rtc_set_loop:
 ;	ZF - time changed from the previous call flag
 ;	     ZF = 0 - time not changed
 ;	     ZF = 1 - time changed
-;	cs:[dse] - DST flag
 ;	cs:[seconds] - pairs of the RTC register number + current RTC value
 ;-------------------------------------------------------------------------
 rtc_get:
@@ -490,9 +483,6 @@ rtc_get:
 	test	al,cmos_uip
 	loopnz	.wait_for_update	; wait for the update to complete
 	jnz	.exit			; timeout waiting for the update
-
-	and	al,cmos_dse		; isolate DSE bit
-	mov	[dse],al		; set DSE flag in the data area
 
 	mov	cx,num_rtc_regs		; number of iterations
 	mov	si,seconds		; the address of the first RTC value
@@ -618,7 +608,9 @@ init:
 	call	print_string
 
 ;-------------------------------------------------------------------------
-; Parse the command line - look for a hexadecimal number - I/O port number
+; Parse the command line
+; - look for a hexadecimal number - I/O port number
+; - look for '/' option flag and the following character
 ; Implementation:
 ; - Skip all non-space characters
 ; - Skip all space and tab characters
@@ -632,51 +624,55 @@ init:
 	lds	si,[bx+cmd_addr]	; DS:SI - command line
 	cld
 
-skip_drv_name_loop:
+.skip_drv_name_loop:
 	lodsb
 	cmp	al,' '			; space
-	je	skip_space
+	je	.skip_space
 	cmp	al,09h			; TAB
-	je	skip_space
-	jmp	skip_drv_name_loop
+	je	.skip_space
+	jmp	.skip_drv_name_loop
 
-skip_space_loop:
+.skip_space_loop:
 	lodsb
 
-skip_space:
+.skip_space:
 	cmp	al,' '			; space
-	je	skip_space_loop
+	je	.skip_space_loop
 	cmp	al,09h			; TAB
-	je	skip_space_loop
-	jmp	parse_port
-
-parse_port_loop:
-	lodsb
-
-parse_port:
+	je	.skip_space_loop
 	cmp	al,0Dh			; CR - end of cmdline, stop parsing
-	je	port_check
+	je	.port_check
 	cmp	al,0Ah			; LF - end of cmdline, stop parsing
-	je	port_check
-	or	al,20h			; convert letters to lower case
-	cmp	al,'x'			; hexadecimal identifier?
-	je	use_hex
-	cmp	al,'0'
+	je	.port_check
+	cmp	al,'/'			; '/' - options should follow
+	je	.parse_options
+	or	dx,dx			; port number already has been set?
+	jnz	invalid_argument
+	cmp	al,'0'			; otherwise we expect a number...
 	jb	invalid_argument
 	cmp	al,'9'
-	ja	above_nine
-	sub	al,'0'			; convert to binary
-	jmp	add_digit
+	ja	invalid_argument
+	jmp	.parse_port
 
-use_hex:
-	cmp	cl,0			; already seen a hexdecimal identifier?
+.parse_options:
+	lodsb
+	or	al,20h			; convert letters to lower case
+	cmp	al,'d'			; DSE option?
 	jne	invalid_argument
-	cmp	dx,0			; hex flag after a non-zero number?
-	jne	invalid_argument
-	inc	cl			; set hexadecimal flag
-	jmp	parse_port_loop
+	mov	byte cs:[dse],cmos_dse	; set DSE option
+	jmp	.skip_space_loop	; continue parsing command line args
 
-above_nine:
+.parse_port_loop:
+	lodsb
+
+.parse_port:
+	cmp	al,'0'			; below '0'?
+	jb	.skip_space		; check for Space, TAB, CR, LF, '/'...
+	cmp	al,'9'
+	jna	.add_digit		; between '0' and '9' - add a digit
+	or	al,20h			; convert letters to lower case
+	cmp	al,'x'			; hexadecimal identifier?
+	je	.use_hex
 	cmp	cl,0			; hex flag not set, but not a decimal?
 	je	invalid_argument
 	cmp	al,'a'
@@ -685,17 +681,18 @@ above_nine:
 	ja	invalid_argument
 	sub	al,'a'-10		; convert to binary
 
-add_hex_digit:
+.add_hex_digit:
 	shl	dx,1			; DX = DX << 4
 	shl	dx,1
 	shl	dx,1
 	shl	dx,1
 	add	dl,al			; add the digit
-	jmp	parse_port_loop
+	jmp	.parse_port_loop
 
-add_digit:
+.add_digit:
+	sub	al,'0'			; convert to binary
 	cmp	cl,0			; hex flag is set?
-	jne	add_hex_digit		; then add a hex digit
+	jne	.add_hex_digit		; then add a hex digit
 	push	ax
 	mov	ax,10
 	mul	dx			; DX:AX = DX * 10
@@ -703,18 +700,30 @@ add_digit:
 	pop	ax
 	mov	ah,0
 	add	dx,ax			; add the digit
-	jmp	parse_port_loop
+	jmp	.parse_port_loop
 
-port_check:
+.use_hex:
+	cmp	cl,0			; already seen a hexdecimal identifier?
+	jne	invalid_argument
+	cmp	dx,0			; hex flag after a non-zero number?
+	jne	invalid_argument
+	inc	cl			; set hexadecimal flag
+	jmp	.parse_port_loop
+
+.port_check:
 	cmp	dx,0
-	jnz	port_check_range
+	jnz	.port_check_range
 	mov	dx,default_io_port	; DX==0, load the default address
 
-port_check_range:
+.port_check_range:
+	cmp	dx,70h			; I/O port can be 70h on
+					; Micro 8088 / NuXT without 8088 BIOS?!
+	je	.port_ok
 	cmp	dx,3FEh			; I/O port shouldn't be above 3FEh
 	ja	invalid_port
 	cmp	dx,200h			; I/O port shouldn't be below 200h
 	jb	invalid_port
+.port_ok:
 	pop	ds
 	mov	cs:[rtc_io_port],dx	; store the port address
 
@@ -732,13 +741,11 @@ port_check_range:
 
 ; Continue with the RTC initialization
 
+	mov	ah,cmos_24hours		; set 24 hours bit, select CD format
+					; and keep interrupts disabled
+	or	ah,cs:[dse]		; set DSE bit according to the cmd opt.
 	mov	al,cmos_control_b
-	call	rtc_read
-	mov	ah,al
-	and	ah,cmos_dse		; clear all bits except of DSE
-	or	ah,cmos_24hours		; set 24 hours bit, keep BCD format and
-					; interrupts disabled
-	mov	al,cmos_control_b
+
 	call	rtc_write		; write control register B
 
 	mov	al,cmos_control_c
@@ -748,30 +755,97 @@ port_check_range:
 	mov	al,cmos_control_d
 	call	rtc_read		; read control register D
 	test	al,cmos_vrt
-	jnz	battery_good		; RTC battery is good
+	jnz	.battery_good		; RTC battery is good
 
 ; Battery is bad
 
 	mov	dx,msg_rtc_batt
 	call	print_string
 
-; Set initial time and date - Monday, January 1st, 2024
+; Set initial time and date - Monday, January 1st, 2024, 00:00:00
 
-	mov	byte cs:[day+1],2	; Monday
-	mov	byte cs:[date+1],1	; 1st
-	mov	byte cs:[month+1],1	; January
-	mov	byte cs:[year+1],24h	; 24h
+.reset_clock:
+	mov	dx,msg_rtc_inval
+	call	print_string
 	mov	byte cs:[century+1],20h	; 20h
+	mov	byte cs:[year+1],24h	; 24h
+	mov	byte cs:[month+1],1	; January
+	mov	byte cs:[date+1],1	; 1st
+	mov	byte cs:[day+1],2	; Monday
+	mov	byte cs:[hours+1],0
+	mov	byte cs:[minutes+1],0
+	mov	byte cs:[seconds+1],0
 	call	rtc_set
 
-battery_good:
+.battery_good:
 
 ;-------------------------------------------------------------------------
 ; Set BIOS timer variables to RTC time
 
-	push	bx
-
 	call	rtc_get
+
+; Validate date and time
+
+	mov	al,cs:[century+1]
+	call	bcd_to_binary
+	cmp	al,20			; century must be between 19 and 20
+	ja	.reset_clock
+	cmp	al,19
+	jb	.reset_clock
+
+	mov	al,cs:[year+1]
+	call	bcd_to_binary
+	cmp	al,99			; year must be between 0 and 99
+	ja	.reset_clock
+	mov	cl,al			; save the year value in CL
+
+	mov	al,cs:[month+1]
+	cmp	al,12			; month must be between 1 and 12
+	ja	.reset_clock
+	cmp	al,1
+	jb	.reset_clock
+	mov	ch,al			; save the month value to CH
+
+; check for February in a leap year
+
+	mov	ah,0
+	dec	al			; AX - month 0 to 11
+	mov	si,days_in_month
+	add	si,ax			; [SI] - days in the current month
+	mov	al,cs:[date+1]
+	call	bcd_to_binary
+	cmp	al,1			; day must be above or equal to 1
+	jb	.reset_clock
+	mov	ah,cs:[si]		; AH - number of days in the month
+	cmp	ch,2			; is it Febuary?
+	jne	.check_date
+	or	cl,3			; is it a leap year
+	jnz	.check_date
+	inc	ah			; increment number of days for leap year
+
+.check_date:
+	cmp	al,ah			; AL - current date
+	ja	.reset_clock		; AH - days in this month
+
+	mov	al,cs:[day+1]
+	cmp	al,7			; day must be between 1 and 7
+	ja	.reset_clock
+	cmp	al,1
+	jb	.reset_clock
+	mov	al,cs:[hours+1]
+	call	bcd_to_binary
+	cmp	al,23			; hours must be between 0 and 23
+	ja	.reset_clock
+	mov	al,cs:[minutes+1]
+	call	bcd_to_binary
+	cmp	al,59			; minutes must be between 0 and 59
+	ja	.reset_clock
+	mov	al,cs:[seconds+1]
+	call	bcd_to_binary
+	cmp	al,59			; seconds must be between 0 and 59
+	ja	.reset_clock
+
+	push	bx
 
 ; convert time to ticks * 2^11
 
@@ -830,10 +904,8 @@ battery_good:
 	mov	cl,11
 	shr	di,cl
 	mov	cx,di
-
 					; CX = high word of tick count
 					; DX = low word of tick count
-	
 	mov	ah,01h			; int 1Ah, function 01h - set time
 	int	1Ah
 	pop	bx
@@ -884,6 +956,14 @@ battery_good:
 
 	mov	al,cs:[seconds+1]
 	call	print_byte		; print 2-digit seconds
+
+	mov	dx,msg_rtc_dse_ena	; assume DSE is enabled
+	cmp	byte cs:[dse],cmos_dse	; is it really enabled?
+	je	.print_dse
+	mov	dx,msg_rtc_dse_dis
+
+.print_dse:
+	call	print_string
 
 	mov	dx,msg_cr_lf
 	call	print_string
@@ -1018,17 +1098,25 @@ print_digit:
 ;=========================================================================
 ; Messages for the initialization routine
 
-msg_signin	db	'DS12885 RTC Driver, Version 1.0. '
+msg_signin	db	'DS12885 RTC Driver, Version 1.1. '
 		db	'Copyright (C) 2024 Sergey Kiselev'
 		db	0Dh, 0Ah, '$'
-msg_rtc_port	db	'Using RTC at the I/O port 0x$'
-msg_rtc_time	db	'. Date and time: $'
-msg_rtc_batt	db	07h, 'Warning: The RTC battery is bad', 0Dh, 0Ah, '$'
+msg_rtc_port	db	'RTC at the I/O port 0x$'
+msg_rtc_time	db	'; Date and time: $'
+msg_rtc_dse_ena	db	'; DSE enabled$'
+msg_rtc_dse_dis	db	'; DSE disabled$'
+msg_rtc_batt	db	'Warning: The RTC battery is bad', 0Dh, 0Ah, '$'
+msg_rtc_inval	db	07h, 'Warning: Invalid date or time. '
+		db	'Setting to default values', 0Dh, 0Ah, '$'
 msg_no_rtc	db	07h, 'Error: No RTC detected at the I/O port 0x$'
 msg_inv_port	db	07h, 'Error: Invalid port number 0x$'
 msg_inv_arg	db	07h, 'Error: Invalid command line argument'
-msg_usage	db	0Dh, 0Ah, 'Usage: DSCLOCK.SYS [port]', 0Dh, 0Ah
+msg_usage	db	0Dh, 0Ah, 'Usage: DSCLOCK.SYS [port] [/D]', 0Dh, 0Ah
 		db	'  port - decimal or hexadecimal RTC I/O port number.'
-		db	0Dh, 0Ah, '  Supported port range is 0x200 - 0x3FF'
-		db	0Dh, 0Ah, 'Example: DSCLOCK.SYS 0x240'
+		db	0Dh, 0Ah, '    Supported port range is 0x200 - 0x3FF'
+		db	0Dh, 0Ah, '  /D   - enable daylight saving.'
+		db	0Dh, 0Ah, 'Example: DSCLOCK.SYS 0x240 /D'
 msg_cr_lf	db	0Dh, 0AH, '$'
+
+; Data for the initialization routine
+dse		db	0		; DSE flag: 0 - disable; 1 - enable

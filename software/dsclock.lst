@@ -104,8 +104,8 @@
    104 00000004 0880                    		dw	1000000000001000b ; driver attributes
    105                                  ;			|           `--- clock device
    106                                  ;			`--------------- character device
-   107 00000006 [3700]                  		dw	strategy	; strategy entry point
-   108 00000008 [4200]                  		dw	entry		; device driver entry point
+   107 00000006 [3600]                  		dw	strategy	; strategy entry point
+   108 00000008 [4100]                  		dw	entry		; device driver entry point
    109 0000000A 434C4F434B242020        		db	'CLOCK$  '	; device name
    110                                  
    111                                  ;=========================================================================
@@ -113,962 +113,1060 @@
    113                                  ;-------------------------------------------------------------------------
    114 00000012 00000000                request_ptr	dd	0		; pointer to the request header
    115 00000016 4002                    rtc_io_port	dw	0240h		; use I/O port 240h by default
-   116 00000018 00                      dse		db	0		; DSE flag: 0 - disable; 1 - enable
-   117 00000019 0000                    seconds		db	cmos_seconds,0	; last seconds value read or written
-   118 0000001B 0200                    minutes		db	cmos_minutes,0	; last minutes value read or written
-   119 0000001D 0400                    hours		db	cmos_hours,0	; last hours value read or written
-   120 0000001F 0600                    day		db	cmos_day,0	; last day value read or written
-   121 00000021 0700                    date		db	cmos_date,0	; last date value read or written
-   122 00000023 0800                    month		db	cmos_month,0	; last month value read or written
-   123 00000025 0900                    year		db	cmos_year,0	; last year value read or written
-   124 00000027 3200                    century		db	cmos_century,0	; last century value read or written
-   125                                  num_rtc_regs	equ	($-seconds)/2	; number of RTC registers
-   126 00000029 0000                    ticks		dw	0		; initial ticks value for read time
-   127 0000002B 1F1C1F1E1F1E1F1F1E-     days_in_month	db	31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
-   127 00000034 1F1E1F             
-   128                                  
-   129                                  ;=========================================================================
-   130                                  ; strategy - MS-DOS calls this function first, passing the request header
-   131                                  ;            address. This function stores that address in request_ptr
-   132                                  ; Input:
-   133                                  ;	ES:BX = request header address
-   134                                  ; Output:
-   135                                  ;	none
-   136                                  ;-------------------------------------------------------------------------
-   137                                  strategy:
-   138 00000037 2E891E[1200]            	mov	cs:[request_ptr],bx	; save request header address
-   139 0000003C 2E8C06[1400]            	mov	cs:[request_ptr+2],es
-   140 00000041 CB                      	retf
-   141                                  
-   142                                  ;=========================================================================
-   143                                  ; entry - MS-DOS calls this function to perform the operation
-   144                                  ; Input:
-   145                                  ;	none; strategy subroutine is called first with the request header
-   146                                  ; Output:
-   147                                  ;	[request_ptr] is populated for init, read, and write functions
-   148                                  ;	[transfer_addr] is populated for the read function
-   149                                  ;-------------------------------------------------------------------------
-   150                                  entry:
-   151 00000042 9C                      	pushf				; save the registers on the stack
-   152 00000043 06                      	push	es
-   153 00000044 1E                      	push	ds
-   154 00000045 50                      	push	ax
-   155 00000046 53                      	push	bx
-   156 00000047 51                      	push	cx
-   157 00000048 52                      	push	dx
-   158 00000049 56                      	push	si
-   159 0000004A 57                      	push	di
-   160 0000004B FC                      	cld
-   161 0000004C 2EC51E[1200]            	lds	bx,cs:[request_ptr]	; load request header pointer to DS:BX
-   162 00000051 C747030001              	mov	word [bx+status],status_done	; set return status to "done"
-   163 00000056 8A4702                  	mov	al,[bx+cmd]		; load command code to AL
-   164 00000059 3C00                    	cmp	al,cmd_init		; "Init" command?
-   165 0000005B 7503E94802              	je	init			; jump to init subroutine
-   166 00000060 8B770E                  	mov	si,[bx+transfer_addr]	; SI = clock data sequence
-   167 00000063 3C04                    	cmp	al,cmd_read		; "Read" command?
-   168 00000065 7416                    	je	read			; jump to read subroutine
-   169 00000067 3C08                    	cmp	al,cmd_write		; "Write" command?
-   170 00000069 7503E9C700              	je	write			; jump to write subroutine
-   171                                  error:
-   172 0000006E C747030C80              	mov	word [bx+status],status_fail	; invalid function number
-   173                                  exit:
-   174 00000073 5F                      	pop	di
-   175 00000074 5E                      	pop	si
-   176 00000075 5A                      	pop	dx
-   177 00000076 59                      	pop	cx
-   178 00000077 5B                      	pop	bx
-   179 00000078 58                      	pop	ax
-   180 00000079 1F                      	pop	ds
-   181 0000007A 07                      	pop	es
-   182 0000007B 9D                      	popf
-   183 0000007C CB                      	retf
-   184                                  
-   185                                  ;=========================================================================
-   186                                  ; read - Read (get) time
-   187                                  ; Input:
-   188                                  ;	[SI] = 6-byte sequence with the values for the clock
-   189                                  ; Output:
-   190                                  ;	[SI] = 6-byte sequence populated with the current clock date and time
-   191                                  ;-------------------------------------------------------------------------
-   192                                  read:
-   193 0000007D E8A601                  	call	rtc_get			; get current time and date
-   194 00000080 9C                      	pushf				; save time changed flag
-   195 00000081 2EA0[1E00]              	mov	al,cs:[hours+1]		; AL = BSD hours
-   196 00000085 E80402                  	call	bcd_to_binary		; convert to binary
-   197 00000088 884403                  	mov	[si+clk_hours],al
-   198 0000008B 2EA0[1C00]              	mov	al,cs:[minutes+1]	; AL = BCD minutes
-   199 0000008F E8FA01                  	call	bcd_to_binary		; convert to binary
-   200 00000092 884402                  	mov	[si+clk_minutes],al
-   201 00000095 2EA0[1A00]              	mov	al,cs:[seconds+1]	; AL = BCD seconds
-   202 00000099 E8F001                  	call	bcd_to_binary		; convert to binary
-   203 0000009C 884405                  	mov	[si+clk_seconds],al
-   204                                  
-   205                                  ; DS12885 RTC provides time only down to 1 second
-   206                                  ; DOS wants centisecond accuracy
-   207                                  ; do our best to get that using system interval timer (~55 ms intervals)
-   208                                  
-   209 0000009F 51                      	push	cx
-   210 000000A0 52                      	push	dx
-   211 000000A1 B400                    	mov	ah,00h			; read system clock counter
-   212 000000A3 CD1A                    	int	1Ah			; System Clock BIOS Services
-   213 000000A5 89D0                    	mov	ax,dx			; AX = low word of tick count
-   214 000000A7 5A                      	pop	dx
-   215 000000A8 59                      	pop	cx
-   216 000000A9 9D                      	popf				; ZF = time changed flag
-   217 000000AA 750F                    	jnz	.reset_ticks		; time changed since last call
-   218                                  
-   219                                  ; Still the same time (up to seconds)
-   220                                  ; calculate the centisecond based on ticks difference
-   221                                  
-   222 000000AC 2E2B06[2900]            	sub	ax,cs:[ticks]		; find the difference between the
-   223                                  					; current and the previous ticks count
-   224                                  					; we should't care for roll-over
-   225                                  					; because the difference should not be
-   226                                  					; more than 18 ticks...
-   227                                  	
-   228 000000B1 B20B                    	mov	dl,11			; 11 2-centisecond intervals per tick
-   229 000000B3 F6E2                    	mul	dl			; AX = centiseconds * 2
-   230 000000B5 88C2                    	mov	dl,al			; DL = centiseconds * 2
-   231 000000B7 D0EA                    	shr	dl,1			; DL = centiseconds
-   232 000000B9 EB06                    	jmp	.return_cseconds
-   233                                  
-   234                                  .reset_ticks:
-   235 000000BB 2EA3[2900]              	mov	cs:[ticks],ax		; store ticks value
-   236 000000BF B200                    	mov	dl,0			; centiseconds = 0
-   237                                  
-   238                                  .return_cseconds:
-   239 000000C1 885404                  	mov	[si+clk_cseconds],dl
-   240                                  
-   241                                  ; calculate days since 1/1/1980
-   242                                  
-   243 000000C4 2EA0[2800]              	mov	al,cs:[century+1]	; AL = BCD century
-   244 000000C8 E8C101                  	call	bcd_to_binary
-   245 000000CB 88C5                    	mov	ch,al			; CH = binary century
-   246 000000CD 2EA0[2600]              	mov	al,cs:[year+1]		; AL = BCD year
-   247 000000D1 E8B801                  	call	bcd_to_binary
-   248 000000D4 88C1                    	mov	cl,al			; CL = binary year
-   249 000000D6 2EA0[2400]              	mov	al,cs:[month+1]		; AL = BCD month
-   250 000000DA E8AF01                  	call	bcd_to_binary
-   251 000000DD 88C6                    	mov	dh,al			; DH = binary month
-   252 000000DF 2EA0[2200]              	mov	al,cs:[date+1]		; AL = BCD date
-   253 000000E3 E8A601                  	call	bcd_to_binary
-   254 000000E6 88C2                    	mov	dl,al			; DL = binary date
-   255                                  
-   256 000000E8 53                      	push	bx
-   257 000000E9 31DB                    	xor	bx,bx			; result - days since 1/1/1980
-   258                                  
-   259 000000EB 80FD14                  	cmp	ch,20			; is it 21st century (year 20xx)?
-   260 000000EE 7405                    	je	.twentyfirst
-   261 000000F0 80E950                  	sub	cl,80			; 20th century, subtract 80 from year
-   262 000000F3 EB03                    	jmp	.add_leap_years
-   263                                  .twentyfirst:
-   264 000000F5 80C114                  	add	cl,20			; 21th century, add 20 to the year
-   265                                  .add_leap_years:
-   266 000000F8 88CB                    	mov	bl,cl			; years since 1980
-   267 000000FA D1EB                    	shr	bx,1			; BX /= 4 - number of leap years
-   268 000000FC D1EB                    	shr	bx,1
-   269                                  
-   270 000000FE B500                    	mov	ch,0
-   271 00000100 B86D01                  	mov	ax,365			; days in a year
-   272 00000103 52                      	push	dx			; DX gets modified by multiplication
-   273 00000104 F7E1                    	mul	cx			; DX:AX = days in the years so far
-   274 00000106 5A                      	pop	dx
-   275 00000107 01C3                    	add	bx,ax			; add the days in the past years
-   276                                  
-   277 00000109 F6C103                  	test	cl,3			; is it a leap year?
-   278 0000010C 7403                    	je	.leap_year
-   279 0000010E 43                      	inc	bx			; add a day for the previous leap year
-   280 0000010F EB06                    	jmp	.add_months
-   281                                  
-   282                                  .leap_year:
-   283 00000111 80FE02                  	cmp	dh,2			; leap year, before March?
-   284 00000114 7601                    	jna	.add_months
-   285 00000116 43                      	inc	bx			; add an extra day for Feburary
-   286                                  
-   287                                  .add_months:
-   288 00000117 8D3E[2B00]              	lea	di,[days_in_month]	; table with number of days per month
-   289 0000011B 88F1                    	mov	cl,dh			; CL - current month (1-12)
-   290 0000011D EB07                    	jmp	.add_months_next	; first decrement month, then add
-   291                                  
-   292                                  .add_months_loop:
-   293 0000011F 2E021D                  	add	bl,byte cs:[di]		; add number of days in the month
-   294 00000122 80D700                  	adc	bh,0			; add the carry
-   295 00000125 47                      	inc	di			; move to the next month
-   296                                  
-   297                                  .add_months_next:
-   298 00000126 E2F7                    	loop	.add_months_loop
-   299                                  
-   300 00000128 FECA                    	dec	dl			; date is 1 based, make it 0 based
-   301 0000012A 00D3                    	add	bl,dl			; add the current day of the month
-   302 0000012C 80D700                  	adc	bh,0			; add the carry
-   303                                  	
-   304 0000012F 891C                    	mov	[si+clk_days],bx	; return the result to DOS
-   305 00000131 5B                      	pop	bx
-   306                                  
-   307 00000132 E93EFF                  	jmp	exit
-   308                                  
-   309                                  ;=========================================================================
-   310                                  ; write - Write (set) time
-   311                                  ; Input:
-   312                                  ;	[SI] = 6-byte sequence with the values for the clock
-   313                                  ; Output:
-   314                                  ;	none
-   315                                  ;-------------------------------------------------------------------------
-   316                                  write:
-   317 00000135 8A4403                  	mov	al,byte [si+clk_hours]
-   318 00000138 E86001                  	call	binary_to_bcd		; convert to BCD
-   319 0000013B 2EA2[1E00]              	mov	cs:[hours+1],al		; save BCD hours
-   320 0000013F 8A4402                  	mov	al,byte [si+clk_minutes]
-   321 00000142 E85601                  	call	binary_to_bcd		; convert to BCD
-   322 00000145 2EA2[1C00]              	mov	cs:[minutes+1],al	; save BCD minutes
-   323 00000149 8A4405                  	mov	al,byte [si+clk_seconds]
-   324 0000014C E84C01                  	call	binary_to_bcd		; convert to BCD
-   325 0000014F 2EA2[1A00]              	mov	cs:[seconds+1],al	; save BCD seconds
-   326                                  
-   327 00000153 53                      	push	bx
-   328                                  
-   329 00000154 8B04                    	mov	ax,word [si+clk_days]	; days since 1/1/1980
-   330                                  
-   331                                  ; calculate the day of the week
-   332                                  
-   333 00000156 50                      	push	ax
-   334 00000157 83C002                  	add	ax,2			; January 1st 1980 is a Tuesday
-   335 0000015A 31D2                    	xor	dx,dx			; DX:AX - days since 1/1/1980
-   336 0000015C BB0700                  	mov	bx,7			; 7 days a week
-   337 0000015F F7F3                    	div	bx			; DL - remainer day of the week
-   338 00000161 FEC2                    	inc	dl			; days of the week are 1-based
-   339 00000163 2E8816[2000]            	mov	cs:[day+1],dl		; save day of the week
-   340 00000168 58                      	pop	ax
-   341                                  
-   342                                  ; calculate the date
-   343                                  
-   344 00000169 B9B505                  	mov	cx,1461			; 1461 in a 4 year cycle (365*3+366)
-   345 0000016C 31D2                    	xor	dx,dx			; DX:AX = days since 1/1/1980
-   346 0000016E F7F1                    	div	cx			; AX = number of 4 year cycles
-   347 00000170 01C0                    	add	ax,ax			; AX = AX * 4 - number of years
-   348 00000172 01C0                    	add	ax,ax			; since 1/1/1980 modulo 4
-   349 00000174 88C1                    	mov	cl,al			; CL = years modulo 4
-   350 00000176 80C150                  	add	cl,80			; the starting year is 1980
-   351 00000179 B513                    	mov	ch,19			; CH = century, assume 20th century
-   352 0000017B 80F964                  	cmp	cl,100
-   353 0000017E 7205                    	jb	.twentieth_century	; the year is below 100?
-   354 00000180 80E964                  	sub	cl,100			; subtract 100 from the year
-   355 00000183 FEC5                    	inc	ch			; increment the century
-   356                                  
-   357                                  .twentieth_century:
-   358 00000185 89D0                    	mov	ax,dx			; AX - remainder = the day in the
-   359                                  					; current 4 year cycle
-   360                                  
-   361 00000187 83F83B                  	cmp	ax,59			; February 29 of a leap year?
-   362 0000018A 7209                    	jb	.calculate_year
-   363 0000018C 7706                    	ja	.past_february		
-   364 0000018E B602                    	mov	dh,2			; February
-   365 00000190 B21D                    	mov	dl,29			; 29
-   366 00000192 EB26                    	jmp	.set_date
-   367                                  
-   368                                  .past_february:
-   369 00000194 48                      	dec	ax			; decrement a day for the leap year
-   370                                  
-   371                                  .calculate_year:
-   372 00000195 BB6D01                  	mov	bx,365			; 365 days in a year
-   373 00000198 31D2                    	xor	dx,dx			; DX:AX = the day in the current
-   374                                  					; 4 year cycle
-   375 0000019A F7F3                    	div	bx			; AX = year in the 4 year cycle
-   376                                  					; DX = day in the current year
-   377 0000019C 00C1                    	add	cl,al			; CL = year
-   378                                  
-   379 0000019E 31DB                    	xor	bx,bx			; BH = month, BL = date
-   380 000001A0 B400                    	mov	ah,0
-   381 000001A2 8D3E[2B00]              	lea	di,[days_in_month]
-   382                                  
-   383                                  .add_months_loop:
-   384 000001A6 2E8A05                  	mov	al,cs:[di]		; AL - number of days in the month
-   385 000001A9 39C2                    	cmp	dx,ax			; the current day is below the number
-   386 000001AB 7207                    	jb	.add_months_done	; of days in the current month?
-   387 000001AD 29C2                    	sub	dx,ax			; subtract the days in the month
-   388 000001AF 47                      	inc	di			; move to the next month
-   389 000001B0 FEC7                    	inc	bh			; increment month count
-   390 000001B2 EBF2                    	jmp	.add_months_loop
-   391                                  
-   392                                  .add_months_done:
-   393 000001B4 88FE                    	mov	dh,bh			; BH = month
-   394 000001B6 FEC6                    	inc	dh			; months are 1 based
-   395 000001B8 FEC2                    	inc	dl			; dates are 1 based
-   396                                  
-   397                                  .set_date:
-   398 000001BA 88E8                    	mov	al,ch
-   399 000001BC E8DC00                  	call	binary_to_bcd
-   400 000001BF 2EA2[2800]              	mov	cs:[century+1],al	; save BCD century
-   401 000001C3 88C8                    	mov	al,cl
-   402 000001C5 E8D300                  	call	binary_to_bcd
-   403 000001C8 2EA2[2600]              	mov	cs:[year+1],al		; save BCD year
-   404 000001CC 88F0                    	mov	al,dh
-   405 000001CE E8CA00                  	call	binary_to_bcd
-   406 000001D1 2EA2[2400]              	mov	cs:[month+1],al		; save BCD month
-   407 000001D5 88D0                    	mov	al,dl
-   408 000001D7 E8C100                  	call	binary_to_bcd
-   409 000001DA 2EA2[2200]              	mov	cs:[date+1],al		; save BCD date
-   410                                  
-   411 000001DE E80400                  	call	rtc_set
-   412                                  
-   413 000001E1 5B                      	pop	bx
-   414                                  
-   415 000001E2 E98EFE                  	jmp	exit
-   416                                  
-   417                                  ;=========================================================================
-   418                                  ; rtc_set - Set real time clock
-   419                                  ; Input:
-   420                                  ;	cs:[dse] - DSE flag
-   421                                  ;	cs:[seconds] - pairs of the RTC register number + RTC value
-   422                                  ; Output:
-   423                                  ;	None
-   424                                  ;-------------------------------------------------------------------------
-   425                                  rtc_set:
-   426 000001E5 50                      	push	ax
-   427 000001E6 51                      	push	cx
-   428 000001E7 56                      	push	si
-   429 000001E8 1E                      	push	ds
-   430 000001E9 8CC8                    	mov	ax,cs
-   431 000001EB 8ED8                    	mov	ds,ax			; DS = CS
-   432 000001ED B00B                    	mov	al,cmos_control_b
-   433 000001EF E86C00                  	call	rtc_read		; read control B register
-   434 000001F2 88C4                    	mov	ah,al
-   435 000001F4 80CC80                  	or	ah,cmos_set		; set the RTC set bit
-   436 000001F7 B00B                    	mov	al,cmos_control_b
-   437 000001F9 E87700                  	call	rtc_write		; write control B register
-   438                                  
-   439 000001FC 0A26[1800]              	or	ah,[dse]		; set DSE flag from the data area
-   440 00000200 B00B                    	mov	al,cmos_control_b
-   441 00000202 E86E00                  	call	rtc_write		; write control B register
-   442                                  
-   443 00000205 B90800                  	mov	cx,num_rtc_regs		; number of iterations
-   444 00000208 BE[1900]                	mov	si,seconds		; the address of the first RTC value
-   445 0000020B FC                      	cld
-   446                                  
-   447                                  rtc_set_loop:
-   448 0000020C AD                      	lodsw				; AX = DS:[SI], SI += 2
-   449                                  					; AL - RTC register number
-   450                                  					; AH - value to write to the RTC
-   451 0000020D E86300                  	call	rtc_write		; write it to the RTC
-   452 00000210 E2FA                    	loop	rtc_set_loop
-   453                                  
-   454 00000212 B00B                    	mov	al,cmos_control_b
-   455 00000214 E84700                  	call	rtc_read		; read control B register
-   456 00000217 88C4                    	mov	ah,al
-   457 00000219 80E47F                  	and	ah,~cmos_set		; clear the RTC set bit
-   458 0000021C B00B                    	mov	al,cmos_control_b
-   459 0000021E E85200                  	call	rtc_write		; write control B register
-   460 00000221 1F                      	pop	ds
-   461 00000222 5E                      	pop	si
-   462 00000223 59                      	pop	cx
-   463 00000224 58                      	pop	ax
-   464 00000225 C3                      	ret
-   465                                  
-   466                                  ;=========================================================================
-   467                                  ; rtc_get - Get real time clock
-   468                                  ; Input:
-   469                                  ;	cs:[seconds] - pairs of the RTC register number + previous RTC value
-   470                                  ; Output:
-   471                                  ;	ZF - time changed from the previous call flag
-   472                                  ;	     ZF = 0 - time not changed
-   473                                  ;	     ZF = 1 - time changed
-   474                                  ;	cs:[dse] - DST flag
-   475                                  ;	cs:[seconds] - pairs of the RTC register number + current RTC value
-   476                                  ;-------------------------------------------------------------------------
-   477                                  rtc_get:
-   478 00000226 50                      	push	ax
-   479 00000227 51                      	push	cx
-   480 00000228 52                      	push	dx
-   481 00000229 56                      	push	si
-   482 0000022A 1E                      	push	ds
-   483 0000022B 8CC8                    	mov	ax,cs
-   484 0000022D 8ED8                    	mov	ds,ax			; DS = CS
-   485 0000022F 31D2                    	xor	dx,dx			; reset time changed flag
+   116 00000018 0000                    seconds		db	cmos_seconds,0	; last seconds value read or written
+   117 0000001A 0200                    minutes		db	cmos_minutes,0	; last minutes value read or written
+   118 0000001C 0400                    hours		db	cmos_hours,0	; last hours value read or written
+   119 0000001E 0600                    day		db	cmos_day,0	; last day value read or written
+   120 00000020 0700                    date		db	cmos_date,0	; last date value read or written
+   121 00000022 0800                    month		db	cmos_month,0	; last month value read or written
+   122 00000024 0900                    year		db	cmos_year,0	; last year value read or written
+   123 00000026 3200                    century		db	cmos_century,0	; last century value read or written
+   124                                  num_rtc_regs	equ	($-seconds)/2	; number of RTC registers
+   125 00000028 0000                    ticks		dw	0		; initial ticks value for read time
+   126 0000002A 1F1C1F1E1F1E1F1F1E-     days_in_month	db	31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+   126 00000033 1F1E1F             
+   127                                  
+   128                                  ;=========================================================================
+   129                                  ; strategy - MS-DOS calls this function first, passing the request header
+   130                                  ;            address. This function stores that address in request_ptr
+   131                                  ; Input:
+   132                                  ;	ES:BX = request header address
+   133                                  ; Output:
+   134                                  ;	none
+   135                                  ;-------------------------------------------------------------------------
+   136                                  strategy:
+   137 00000036 2E891E[1200]            	mov	cs:[request_ptr],bx	; save request header address
+   138 0000003B 2E8C06[1400]            	mov	cs:[request_ptr+2],es
+   139 00000040 CB                      	retf
+   140                                  
+   141                                  ;=========================================================================
+   142                                  ; entry - MS-DOS calls this function to perform the operation
+   143                                  ; Input:
+   144                                  ;	none; strategy subroutine is called first with the request header
+   145                                  ; Output:
+   146                                  ;	[request_ptr] is populated for init, read, and write functions
+   147                                  ;	[transfer_addr] is populated for the read function
+   148                                  ;-------------------------------------------------------------------------
+   149                                  entry:
+   150 00000041 9C                      	pushf				; save the registers on the stack
+   151 00000042 06                      	push	es
+   152 00000043 1E                      	push	ds
+   153 00000044 50                      	push	ax
+   154 00000045 53                      	push	bx
+   155 00000046 51                      	push	cx
+   156 00000047 52                      	push	dx
+   157 00000048 56                      	push	si
+   158 00000049 57                      	push	di
+   159 0000004A FC                      	cld
+   160 0000004B 2EC51E[1200]            	lds	bx,cs:[request_ptr]	; load request header pointer to DS:BX
+   161 00000050 C747030001              	mov	word [bx+status],status_done	; set return status to "done"
+   162 00000055 8A4702                  	mov	al,[bx+cmd]		; load command code to AL
+   163 00000058 3C00                    	cmp	al,cmd_init		; "Init" command?
+   164 0000005A 7503E93A02              	je	init			; jump to init subroutine
+   165 0000005F 8B770E                  	mov	si,[bx+transfer_addr]	; SI = clock data sequence
+   166 00000062 3C04                    	cmp	al,cmd_read		; "Read" command?
+   167 00000064 7416                    	je	read			; jump to read subroutine
+   168 00000066 3C08                    	cmp	al,cmd_write		; "Write" command?
+   169 00000068 7503E9C700              	je	write			; jump to write subroutine
+   170                                  error:
+   171 0000006D C747030C80              	mov	word [bx+status],status_fail	; invalid function number
+   172                                  exit:
+   173 00000072 5F                      	pop	di
+   174 00000073 5E                      	pop	si
+   175 00000074 5A                      	pop	dx
+   176 00000075 59                      	pop	cx
+   177 00000076 5B                      	pop	bx
+   178 00000077 58                      	pop	ax
+   179 00000078 1F                      	pop	ds
+   180 00000079 07                      	pop	es
+   181 0000007A 9D                      	popf
+   182 0000007B CB                      	retf
+   183                                  
+   184                                  ;=========================================================================
+   185                                  ; read - Read (get) time
+   186                                  ; Input:
+   187                                  ;	[SI] = 6-byte sequence with the values for the clock
+   188                                  ; Output:
+   189                                  ;	[SI] = 6-byte sequence populated with the current clock date and time
+   190                                  ;-------------------------------------------------------------------------
+   191                                  read:
+   192 0000007C E89D01                  	call	rtc_get			; get current time and date
+   193 0000007F 9C                      	pushf				; save time changed flag
+   194 00000080 2EA0[1D00]              	mov	al,cs:[hours+1]		; AL = BSD hours
+   195 00000084 E8F601                  	call	bcd_to_binary		; convert to binary
+   196 00000087 884403                  	mov	[si+clk_hours],al
+   197 0000008A 2EA0[1B00]              	mov	al,cs:[minutes+1]	; AL = BCD minutes
+   198 0000008E E8EC01                  	call	bcd_to_binary		; convert to binary
+   199 00000091 884402                  	mov	[si+clk_minutes],al
+   200 00000094 2EA0[1900]              	mov	al,cs:[seconds+1]	; AL = BCD seconds
+   201 00000098 E8E201                  	call	bcd_to_binary		; convert to binary
+   202 0000009B 884405                  	mov	[si+clk_seconds],al
+   203                                  
+   204                                  ; DS12885 RTC provides time only down to 1 second
+   205                                  ; DOS wants centisecond accuracy
+   206                                  ; do our best to get that using system interval timer (~55 ms intervals)
+   207                                  
+   208 0000009E 51                      	push	cx
+   209 0000009F 52                      	push	dx
+   210 000000A0 B400                    	mov	ah,00h			; read system clock counter
+   211 000000A2 CD1A                    	int	1Ah			; System Clock BIOS Services
+   212 000000A4 89D0                    	mov	ax,dx			; AX = low word of tick count
+   213 000000A6 5A                      	pop	dx
+   214 000000A7 59                      	pop	cx
+   215 000000A8 9D                      	popf				; ZF = time changed flag
+   216 000000A9 750F                    	jnz	.reset_ticks		; time changed since last call
+   217                                  
+   218                                  ; Still the same time (up to seconds)
+   219                                  ; calculate the centisecond based on ticks difference
+   220                                  
+   221 000000AB 2E2B06[2800]            	sub	ax,cs:[ticks]		; find the difference between the
+   222                                  					; current and the previous ticks count
+   223                                  					; we should't care for roll-over
+   224                                  					; because the difference should not be
+   225                                  					; more than 18 ticks...
+   226                                  	
+   227 000000B0 B20B                    	mov	dl,11			; 11 2-centisecond intervals per tick
+   228 000000B2 F6E2                    	mul	dl			; AX = centiseconds * 2
+   229 000000B4 88C2                    	mov	dl,al			; DL = centiseconds * 2
+   230 000000B6 D0EA                    	shr	dl,1			; DL = centiseconds
+   231 000000B8 EB06                    	jmp	.return_cseconds
+   232                                  
+   233                                  .reset_ticks:
+   234 000000BA 2EA3[2800]              	mov	cs:[ticks],ax		; store ticks value
+   235 000000BE B200                    	mov	dl,0			; centiseconds = 0
+   236                                  
+   237                                  .return_cseconds:
+   238 000000C0 885404                  	mov	[si+clk_cseconds],dl
+   239                                  
+   240                                  ; calculate days since 1/1/1980
+   241                                  
+   242 000000C3 2EA0[2700]              	mov	al,cs:[century+1]	; AL = BCD century
+   243 000000C7 E8B301                  	call	bcd_to_binary
+   244 000000CA 88C5                    	mov	ch,al			; CH = binary century
+   245 000000CC 2EA0[2500]              	mov	al,cs:[year+1]		; AL = BCD year
+   246 000000D0 E8AA01                  	call	bcd_to_binary
+   247 000000D3 88C1                    	mov	cl,al			; CL = binary year
+   248 000000D5 2EA0[2300]              	mov	al,cs:[month+1]		; AL = BCD month
+   249 000000D9 E8A101                  	call	bcd_to_binary
+   250 000000DC 88C6                    	mov	dh,al			; DH = binary month
+   251 000000DE 2EA0[2100]              	mov	al,cs:[date+1]		; AL = BCD date
+   252 000000E2 E89801                  	call	bcd_to_binary
+   253 000000E5 88C2                    	mov	dl,al			; DL = binary date
+   254                                  
+   255 000000E7 53                      	push	bx
+   256 000000E8 31DB                    	xor	bx,bx			; result - days since 1/1/1980
+   257                                  
+   258 000000EA 80FD14                  	cmp	ch,20			; is it 21st century (year 20xx)?
+   259 000000ED 7405                    	je	.twentyfirst
+   260 000000EF 80E950                  	sub	cl,80			; 20th century, subtract 80 from year
+   261 000000F2 EB03                    	jmp	.add_leap_years
+   262                                  .twentyfirst:
+   263 000000F4 80C114                  	add	cl,20			; 21th century, add 20 to the year
+   264                                  .add_leap_years:
+   265 000000F7 88CB                    	mov	bl,cl			; years since 1980
+   266 000000F9 D1EB                    	shr	bx,1			; BX /= 4 - number of leap years
+   267 000000FB D1EB                    	shr	bx,1
+   268                                  
+   269 000000FD B500                    	mov	ch,0
+   270 000000FF B86D01                  	mov	ax,365			; days in a year
+   271 00000102 52                      	push	dx			; DX gets modified by multiplication
+   272 00000103 F7E1                    	mul	cx			; DX:AX = days in the years so far
+   273 00000105 5A                      	pop	dx
+   274 00000106 01C3                    	add	bx,ax			; add the days in the past years
+   275                                  
+   276 00000108 F6C103                  	test	cl,3			; is it a leap year?
+   277 0000010B 7403                    	je	.leap_year
+   278 0000010D 43                      	inc	bx			; add a day for the previous leap year
+   279 0000010E EB06                    	jmp	.add_months
+   280                                  
+   281                                  .leap_year:
+   282 00000110 80FE02                  	cmp	dh,2			; leap year, before March?
+   283 00000113 7601                    	jna	.add_months
+   284 00000115 43                      	inc	bx			; add an extra day for Feburary
+   285                                  
+   286                                  .add_months:
+   287 00000116 8D3E[2A00]              	lea	di,[days_in_month]	; table with number of days per month
+   288 0000011A 88F1                    	mov	cl,dh			; CL - current month (1-12)
+   289 0000011C EB07                    	jmp	.add_months_next	; first decrement month, then add
+   290                                  
+   291                                  .add_months_loop:
+   292 0000011E 2E021D                  	add	bl,byte cs:[di]		; add number of days in the month
+   293 00000121 80D700                  	adc	bh,0			; add the carry
+   294 00000124 47                      	inc	di			; move to the next month
+   295                                  
+   296                                  .add_months_next:
+   297 00000125 E2F7                    	loop	.add_months_loop
+   298                                  
+   299 00000127 FECA                    	dec	dl			; date is 1 based, make it 0 based
+   300 00000129 00D3                    	add	bl,dl			; add the current day of the month
+   301 0000012B 80D700                  	adc	bh,0			; add the carry
+   302                                  	
+   303 0000012E 891C                    	mov	[si+clk_days],bx	; return the result to DOS
+   304 00000130 5B                      	pop	bx
+   305                                  
+   306 00000131 E93EFF                  	jmp	exit
+   307                                  
+   308                                  ;=========================================================================
+   309                                  ; write - Write (set) time
+   310                                  ; Input:
+   311                                  ;	[SI] = 6-byte sequence with the values for the clock
+   312                                  ; Output:
+   313                                  ;	none
+   314                                  ;-------------------------------------------------------------------------
+   315                                  write:
+   316 00000134 8A4403                  	mov	al,byte [si+clk_hours]
+   317 00000137 E85201                  	call	binary_to_bcd		; convert to BCD
+   318 0000013A 2EA2[1D00]              	mov	cs:[hours+1],al		; save BCD hours
+   319 0000013E 8A4402                  	mov	al,byte [si+clk_minutes]
+   320 00000141 E84801                  	call	binary_to_bcd		; convert to BCD
+   321 00000144 2EA2[1B00]              	mov	cs:[minutes+1],al	; save BCD minutes
+   322 00000148 8A4405                  	mov	al,byte [si+clk_seconds]
+   323 0000014B E83E01                  	call	binary_to_bcd		; convert to BCD
+   324 0000014E 2EA2[1900]              	mov	cs:[seconds+1],al	; save BCD seconds
+   325                                  
+   326 00000152 53                      	push	bx
+   327                                  
+   328 00000153 8B04                    	mov	ax,word [si+clk_days]	; days since 1/1/1980
+   329                                  
+   330                                  ; calculate the day of the week
+   331                                  
+   332 00000155 50                      	push	ax
+   333 00000156 83C002                  	add	ax,2			; January 1st 1980 is a Tuesday
+   334 00000159 31D2                    	xor	dx,dx			; DX:AX - days since 1/1/1980
+   335 0000015B BB0700                  	mov	bx,7			; 7 days a week
+   336 0000015E F7F3                    	div	bx			; DL - remainer day of the week
+   337 00000160 FEC2                    	inc	dl			; days of the week are 1-based
+   338 00000162 2E8816[1F00]            	mov	cs:[day+1],dl		; save day of the week
+   339 00000167 58                      	pop	ax
+   340                                  
+   341                                  ; calculate the date
+   342                                  
+   343 00000168 B9B505                  	mov	cx,1461			; 1461 in a 4 year cycle (365*3+366)
+   344 0000016B 31D2                    	xor	dx,dx			; DX:AX = days since 1/1/1980
+   345 0000016D F7F1                    	div	cx			; AX = number of 4 year cycles
+   346 0000016F 01C0                    	add	ax,ax			; AX = AX * 4 - number of years
+   347 00000171 01C0                    	add	ax,ax			; since 1/1/1980 modulo 4
+   348 00000173 88C1                    	mov	cl,al			; CL = years modulo 4
+   349 00000175 80C150                  	add	cl,80			; the starting year is 1980
+   350 00000178 B513                    	mov	ch,19			; CH = century, assume 20th century
+   351 0000017A 80F964                  	cmp	cl,100
+   352 0000017D 7205                    	jb	.twentieth_century	; the year is below 100?
+   353 0000017F 80E964                  	sub	cl,100			; subtract 100 from the year
+   354 00000182 FEC5                    	inc	ch			; increment the century
+   355                                  
+   356                                  .twentieth_century:
+   357 00000184 89D0                    	mov	ax,dx			; AX - remainder = the day in the
+   358                                  					; current 4 year cycle
+   359                                  
+   360 00000186 83F83B                  	cmp	ax,59			; February 29 of a leap year?
+   361 00000189 7209                    	jb	.calculate_year
+   362 0000018B 7706                    	ja	.past_february		
+   363 0000018D B602                    	mov	dh,2			; February
+   364 0000018F B21D                    	mov	dl,29			; 29
+   365 00000191 EB26                    	jmp	.set_date
+   366                                  
+   367                                  .past_february:
+   368 00000193 48                      	dec	ax			; decrement a day for the leap year
+   369                                  
+   370                                  .calculate_year:
+   371 00000194 BB6D01                  	mov	bx,365			; 365 days in a year
+   372 00000197 31D2                    	xor	dx,dx			; DX:AX = the day in the current
+   373                                  					; 4 year cycle
+   374 00000199 F7F3                    	div	bx			; AX = year in the 4 year cycle
+   375                                  					; DX = day in the current year
+   376 0000019B 00C1                    	add	cl,al			; CL = year
+   377                                  
+   378 0000019D 31DB                    	xor	bx,bx			; BH = month, BL = date
+   379 0000019F B400                    	mov	ah,0
+   380 000001A1 8D3E[2A00]              	lea	di,[days_in_month]
+   381                                  
+   382                                  .add_months_loop:
+   383 000001A5 2E8A05                  	mov	al,cs:[di]		; AL - number of days in the month
+   384 000001A8 39C2                    	cmp	dx,ax			; the current day is below the number
+   385 000001AA 7207                    	jb	.add_months_done	; of days in the current month?
+   386 000001AC 29C2                    	sub	dx,ax			; subtract the days in the month
+   387 000001AE 47                      	inc	di			; move to the next month
+   388 000001AF FEC7                    	inc	bh			; increment month count
+   389 000001B1 EBF2                    	jmp	.add_months_loop
+   390                                  
+   391                                  .add_months_done:
+   392 000001B3 88FE                    	mov	dh,bh			; BH = month
+   393 000001B5 FEC6                    	inc	dh			; months are 1 based
+   394 000001B7 FEC2                    	inc	dl			; dates are 1 based
+   395                                  
+   396                                  .set_date:
+   397 000001B9 88E8                    	mov	al,ch
+   398 000001BB E8CE00                  	call	binary_to_bcd
+   399 000001BE 2EA2[2700]              	mov	cs:[century+1],al	; save BCD century
+   400 000001C2 88C8                    	mov	al,cl
+   401 000001C4 E8C500                  	call	binary_to_bcd
+   402 000001C7 2EA2[2500]              	mov	cs:[year+1],al		; save BCD year
+   403 000001CB 88F0                    	mov	al,dh
+   404 000001CD E8BC00                  	call	binary_to_bcd
+   405 000001D0 2EA2[2300]              	mov	cs:[month+1],al		; save BCD month
+   406 000001D4 88D0                    	mov	al,dl
+   407 000001D6 E8B300                  	call	binary_to_bcd
+   408 000001D9 2EA2[2100]              	mov	cs:[date+1],al		; save BCD date
+   409                                  
+   410 000001DD E80400                  	call	rtc_set
+   411                                  
+   412 000001E0 5B                      	pop	bx
+   413                                  
+   414 000001E1 E98EFE                  	jmp	exit
+   415                                  
+   416                                  ;=========================================================================
+   417                                  ; rtc_set - Set real time clock
+   418                                  ; Input:
+   419                                  ;	cs:[seconds] - pairs of the RTC register number + RTC value
+   420                                  ; Output:
+   421                                  ;	None
+   422                                  ;-------------------------------------------------------------------------
+   423                                  rtc_set:
+   424 000001E4 50                      	push	ax
+   425 000001E5 51                      	push	cx
+   426 000001E6 56                      	push	si
+   427 000001E7 1E                      	push	ds
+   428 000001E8 8CC8                    	mov	ax,cs
+   429 000001EA 8ED8                    	mov	ds,ax			; DS = CS
+   430 000001EC B00B                    	mov	al,cmos_control_b
+   431 000001EE E85E00                  	call	rtc_read		; read control B register
+   432 000001F1 88C4                    	mov	ah,al
+   433 000001F3 80CC80                  	or	ah,cmos_set		; set the RTC set bit
+   434 000001F6 B00B                    	mov	al,cmos_control_b
+   435 000001F8 E86900                  	call	rtc_write		; write control B register
+   436                                  
+   437 000001FB B90800                  	mov	cx,num_rtc_regs		; number of iterations
+   438 000001FE BE[1800]                	mov	si,seconds		; the address of the first RTC value
+   439 00000201 FC                      	cld
+   440                                  
+   441                                  rtc_set_loop:
+   442 00000202 AD                      	lodsw				; AX = DS:[SI], SI += 2
+   443                                  					; AL - RTC register number
+   444                                  					; AH - value to write to the RTC
+   445 00000203 E85E00                  	call	rtc_write		; write it to the RTC
+   446 00000206 E2FA                    	loop	rtc_set_loop
+   447                                  
+   448 00000208 B00B                    	mov	al,cmos_control_b
+   449 0000020A E84200                  	call	rtc_read		; read control B register
+   450 0000020D 88C4                    	mov	ah,al
+   451 0000020F 80E47F                  	and	ah,~cmos_set		; clear the RTC set bit
+   452 00000212 B00B                    	mov	al,cmos_control_b
+   453 00000214 E84D00                  	call	rtc_write		; write control B register
+   454 00000217 1F                      	pop	ds
+   455 00000218 5E                      	pop	si
+   456 00000219 59                      	pop	cx
+   457 0000021A 58                      	pop	ax
+   458 0000021B C3                      	ret
+   459                                  
+   460                                  ;=========================================================================
+   461                                  ; rtc_get - Get real time clock
+   462                                  ; Input:
+   463                                  ;	cs:[seconds] - pairs of the RTC register number + previous RTC value
+   464                                  ; Output:
+   465                                  ;	ZF - time changed from the previous call flag
+   466                                  ;	     ZF = 0 - time not changed
+   467                                  ;	     ZF = 1 - time changed
+   468                                  ;	cs:[seconds] - pairs of the RTC register number + current RTC value
+   469                                  ;-------------------------------------------------------------------------
+   470                                  rtc_get:
+   471 0000021C 50                      	push	ax
+   472 0000021D 51                      	push	cx
+   473 0000021E 52                      	push	dx
+   474 0000021F 56                      	push	si
+   475 00000220 1E                      	push	ds
+   476 00000221 8CC8                    	mov	ax,cs
+   477 00000223 8ED8                    	mov	ds,ax			; DS = CS
+   478 00000225 31D2                    	xor	dx,dx			; reset time changed flag
+   479                                  
+   480                                  .wait_for_update:
+   481 00000227 B00A                    	mov	al,cmos_control_a
+   482 00000229 E82300                  	call	rtc_read		; read control A register
+   483 0000022C A880                    	test	al,cmos_uip
+   484 0000022E E0F7                    	loopnz	.wait_for_update	; wait for the update to complete
+   485 00000230 7515                    	jnz	.exit			; timeout waiting for the update
    486                                  
-   487                                  .wait_for_update:
-   488 00000231 B00A                    	mov	al,cmos_control_a
-   489 00000233 E82800                  	call	rtc_read		; read control A register
-   490 00000236 A880                    	test	al,cmos_uip
-   491 00000238 E0F7                    	loopnz	.wait_for_update	; wait for the update to complete
-   492 0000023A 751A                    	jnz	.exit			; timeout waiting for the update
-   493                                  
-   494 0000023C 2401                    	and	al,cmos_dse		; isolate DSE bit
-   495 0000023E A2[1800]                	mov	[dse],al		; set DSE flag in the data area
-   496                                  
-   497 00000241 B90800                  	mov	cx,num_rtc_regs		; number of iterations
-   498 00000244 BE[1900]                	mov	si,seconds		; the address of the first RTC value
-   499 00000247 FC                      	cld
-   500                                  
-   501                                  .rtc_get_loop:
-   502 00000248 AD                      	lodsw				; AX = DS:[SI], SI += 2
-   503                                  					; AL - RTC register number
-   504                                  					; AH = previous value
-   505 00000249 E81200                  	call	rtc_read
-   506 0000024C 38E0                    	cmp	al,ah			; compare previous and current values
-   507 0000024E 7401                    	je	.rtc_get_loop_continue
-   508 00000250 42                      	inc 	dx			; set time changed flag
-   509                                  
-   510                                  .rtc_get_loop_continue:
-   511 00000251 8844FF                  	mov	[si-1],al		; save the new value
-   512 00000254 E2F2                    	loop	.rtc_get_loop
-   513                                  
-   514                                  .exit:
-   515 00000256 09D2                    	or	dx,dx			; ZF = time changed flag
-   516 00000258 1F                      	pop	ds
-   517 00000259 5E                      	pop	si
-   518 0000025A 5A                      	pop	dx
-   519 0000025B 59                      	pop	cx
-   520 0000025C 58                      	pop	ax
-   521 0000025D C3                      	ret
-   522                                  
-   523                                  ;=========================================================================
-   524                                  ; rtc_read - Read byte from RTC or CMOS memory
-   525                                  ; Input:
-   526                                  ;	AL - address of byte to read
-   527                                  ; Output:
-   528                                  ;	AL - byte from RTC
-   529                                  ;-------------------------------------------------------------------------
-   530                                  rtc_read:
-   531 0000025E 52                      	push	dx
-   532 0000025F 2E8B16[1600]            	mov	dx,cs:[rtc_io_port]
-   533 00000264 FA                      	cli
-   534 00000265 EE                      	out	dx,al
-   535 00000266 EB00                    	jmp	$+2			; I/O delay
-   536 00000268 EB00                    	jmp	$+2
-   537 0000026A EB00                    	jmp	$+2
-   538 0000026C EB00                    	jmp	$+2
-   539 0000026E 42                      	inc	dx			; DX = RTC data register
-   540 0000026F EC                      	in	al,dx
-   541 00000270 FB                      	sti
-   542 00000271 5A                      	pop	dx
-   543 00000272 C3                      	ret
-   544                                  
-   545                                  ;=========================================================================
-   546                                  ; rtc_write - Write byte to RTC or CMOS memory
-   547                                  ; Input:
-   548                                  ;	AL - address of byte to write
-   549                                  ;	AH - byte to write to RTC
-   550                                  ; Output:
-   551                                  ;	none
-   552                                  ;-------------------------------------------------------------------------
-   553                                  rtc_write:
-   554 00000273 52                      	push	dx
-   555 00000274 2E8B16[1600]            	mov	dx,cs:[rtc_io_port]
-   556 00000279 FA                      	cli
-   557 0000027A EE                      	out	dx,al
-   558 0000027B EB00                    	jmp	$+2			; I/O delay
-   559 0000027D EB00                    	jmp	$+2
-   560 0000027F EB00                    	jmp	$+2
-   561 00000281 EB00                    	jmp	$+2
-   562 00000283 86E0                    	xchg	ah,al
-   563 00000285 42                      	inc	dx			; DX = RTC data register
-   564 00000286 EE                      	out	dx,al
-   565 00000287 86E0                    	xchg	ah,al
-   566 00000289 FB                      	sti
-   567 0000028A 5A                      	pop	dx
-   568 0000028B C3                      	ret
-   569                                  
-   570                                  ;=========================================================================
-   571                                  ; bcd_to_binary - convert 8-bit BCD number to binary
-   572                                  ; Input:
-   573                                  ;	AL - BCD number
-   574                                  ; Output:
-   575                                  ;	AL - binary number
-   576                                  ;	AH = 0
-   577                                  ;-------------------------------------------------------------------------
-   578                                  bcd_to_binary:
-   579 0000028C 88C4                    	mov	ah,al			; calculate tens
-   580 0000028E 240F                    	and	al,0Fh			; AL = ones
-   581 00000290 D0EC                    	shr	ah,1
-   582 00000292 D0EC                    	shr	ah,1
-   583 00000294 D0EC                    	shr	ah,1
-   584 00000296 D0EC                    	shr	ah,1			; AH = tens
-   585 00000298 D50A                    	aad				; AL = AH * 10 + AL ; AH = 0
-   586 0000029A C3                      	ret
-   587                                  
-   588                                  ;=========================================================================
-   589                                  ; binary_to_bcd - convert 8-bit binary number to BCD
-   590                                  ; Input:
-   591                                  ;	AL - binary number
-   592                                  ; Output:
-   593                                  ;	AL - BCD number
-   594                                  ;	AH - trashed
-   595                                  ;-------------------------------------------------------------------------
-   596                                  binary_to_bcd:
-   597 0000029B D40A                    	aam				; AH = AL / 10 ; AL = AL % 10
-   598 0000029D D0E4                    	shl	ah,1			; shift tens to 4 higher bits
-   599 0000029F D0E4                    	shl	ah,1
-   600 000002A1 D0E4                    	shl	ah,1
-   601 000002A3 D0E4                    	shl	ah,1
-   602 000002A5 00E0                    	add	al,ah			; add tens to ones
-   603 000002A7 C3                      	ret
+   487 00000232 B90800                  	mov	cx,num_rtc_regs		; number of iterations
+   488 00000235 BE[1800]                	mov	si,seconds		; the address of the first RTC value
+   489 00000238 FC                      	cld
+   490                                  
+   491                                  .rtc_get_loop:
+   492 00000239 AD                      	lodsw				; AX = DS:[SI], SI += 2
+   493                                  					; AL - RTC register number
+   494                                  					; AH = previous value
+   495 0000023A E81200                  	call	rtc_read
+   496 0000023D 38E0                    	cmp	al,ah			; compare previous and current values
+   497 0000023F 7401                    	je	.rtc_get_loop_continue
+   498 00000241 42                      	inc 	dx			; set time changed flag
+   499                                  
+   500                                  .rtc_get_loop_continue:
+   501 00000242 8844FF                  	mov	[si-1],al		; save the new value
+   502 00000245 E2F2                    	loop	.rtc_get_loop
+   503                                  
+   504                                  .exit:
+   505 00000247 09D2                    	or	dx,dx			; ZF = time changed flag
+   506 00000249 1F                      	pop	ds
+   507 0000024A 5E                      	pop	si
+   508 0000024B 5A                      	pop	dx
+   509 0000024C 59                      	pop	cx
+   510 0000024D 58                      	pop	ax
+   511 0000024E C3                      	ret
+   512                                  
+   513                                  ;=========================================================================
+   514                                  ; rtc_read - Read byte from RTC or CMOS memory
+   515                                  ; Input:
+   516                                  ;	AL - address of byte to read
+   517                                  ; Output:
+   518                                  ;	AL - byte from RTC
+   519                                  ;-------------------------------------------------------------------------
+   520                                  rtc_read:
+   521 0000024F 52                      	push	dx
+   522 00000250 2E8B16[1600]            	mov	dx,cs:[rtc_io_port]
+   523 00000255 FA                      	cli
+   524 00000256 EE                      	out	dx,al
+   525 00000257 EB00                    	jmp	$+2			; I/O delay
+   526 00000259 EB00                    	jmp	$+2
+   527 0000025B EB00                    	jmp	$+2
+   528 0000025D EB00                    	jmp	$+2
+   529 0000025F 42                      	inc	dx			; DX = RTC data register
+   530 00000260 EC                      	in	al,dx
+   531 00000261 FB                      	sti
+   532 00000262 5A                      	pop	dx
+   533 00000263 C3                      	ret
+   534                                  
+   535                                  ;=========================================================================
+   536                                  ; rtc_write - Write byte to RTC or CMOS memory
+   537                                  ; Input:
+   538                                  ;	AL - address of byte to write
+   539                                  ;	AH - byte to write to RTC
+   540                                  ; Output:
+   541                                  ;	none
+   542                                  ;-------------------------------------------------------------------------
+   543                                  rtc_write:
+   544 00000264 52                      	push	dx
+   545 00000265 2E8B16[1600]            	mov	dx,cs:[rtc_io_port]
+   546 0000026A FA                      	cli
+   547 0000026B EE                      	out	dx,al
+   548 0000026C EB00                    	jmp	$+2			; I/O delay
+   549 0000026E EB00                    	jmp	$+2
+   550 00000270 EB00                    	jmp	$+2
+   551 00000272 EB00                    	jmp	$+2
+   552 00000274 86E0                    	xchg	ah,al
+   553 00000276 42                      	inc	dx			; DX = RTC data register
+   554 00000277 EE                      	out	dx,al
+   555 00000278 86E0                    	xchg	ah,al
+   556 0000027A FB                      	sti
+   557 0000027B 5A                      	pop	dx
+   558 0000027C C3                      	ret
+   559                                  
+   560                                  ;=========================================================================
+   561                                  ; bcd_to_binary - convert 8-bit BCD number to binary
+   562                                  ; Input:
+   563                                  ;	AL - BCD number
+   564                                  ; Output:
+   565                                  ;	AL - binary number
+   566                                  ;	AH = 0
+   567                                  ;-------------------------------------------------------------------------
+   568                                  bcd_to_binary:
+   569 0000027D 88C4                    	mov	ah,al			; calculate tens
+   570 0000027F 240F                    	and	al,0Fh			; AL = ones
+   571 00000281 D0EC                    	shr	ah,1
+   572 00000283 D0EC                    	shr	ah,1
+   573 00000285 D0EC                    	shr	ah,1
+   574 00000287 D0EC                    	shr	ah,1			; AH = tens
+   575 00000289 D50A                    	aad				; AL = AH * 10 + AL ; AH = 0
+   576 0000028B C3                      	ret
+   577                                  
+   578                                  ;=========================================================================
+   579                                  ; binary_to_bcd - convert 8-bit binary number to BCD
+   580                                  ; Input:
+   581                                  ;	AL - binary number
+   582                                  ; Output:
+   583                                  ;	AL - BCD number
+   584                                  ;	AH - trashed
+   585                                  ;-------------------------------------------------------------------------
+   586                                  binary_to_bcd:
+   587 0000028C D40A                    	aam				; AH = AL / 10 ; AL = AL % 10
+   588 0000028E D0E4                    	shl	ah,1			; shift tens to 4 higher bits
+   589 00000290 D0E4                    	shl	ah,1
+   590 00000292 D0E4                    	shl	ah,1
+   591 00000294 D0E4                    	shl	ah,1
+   592 00000296 00E0                    	add	al,ah			; add tens to ones
+   593 00000298 C3                      	ret
+   594                                  
+   595                                  ;=========================================================================
+   596                                  ; init - Initialize the device driver
+   597                                  ; Input:
+   598                                  ;	[bx+cmd_addr] - address of the command line arguments (dword)
+   599                                  ; Output:
+   600                                  ;	[bx+num_units] = 1 - number of units (byte)
+   601                                  ;	[bx+end_addr] - address of the end of the resident part (dword)
+   602                                  ;-------------------------------------------------------------------------
+   603                                  init:
    604                                  
-   605                                  ;=========================================================================
-   606                                  ; init - Initialize the device driver
-   607                                  ; Input:
-   608                                  ;	[bx+cmd_addr] - address of the command line arguments (dword)
-   609                                  ; Output:
-   610                                  ;	[bx+num_units] = 1 - number of units (byte)
-   611                                  ;	[bx+end_addr] - address of the end of the resident part (dword)
-   612                                  ;-------------------------------------------------------------------------
-   613                                  init:
-   614                                  
-   615                                  ; Print the sign-in message
-   616                                  
-   617 000002A8 BA[0705]                	mov	dx,msg_signin
-   618 000002AB E81102                  	call	print_string
-   619                                  
-   620                                  ;-------------------------------------------------------------------------
-   621                                  ; Parse the command line - look for a hexadecimal number - I/O port number
-   622                                  ; Implementation:
-   623                                  ; - Skip all non-space characters
-   624                                  ; - Skip all space and tab characters
-   625                                  ; - Parse the number either in decimal or hexadecimal format
-   626                                  ;   hexadecimal format uses 'x' as identifier, which might have one or
-   627                                  ;   more zeros before it
-   628                                  
-   629 000002AE 31D2                    	xor	dx,dx			; DX = 0 - port number goes here
-   630 000002B0 B100                    	mov	cl,0			; CL = 0 - hex indicator (0 = decimal)
-   631 000002B2 1E                      	push	ds
-   632 000002B3 C57712                  	lds	si,[bx+cmd_addr]	; DS:SI - command line
-   633 000002B6 FC                      	cld
+   605                                  ; Print the sign-in message
+   606                                  
+   607 00000299 BA[DC05]                	mov	dx,msg_signin
+   608 0000029C E8F502                  	call	print_string
+   609                                  
+   610                                  ;-------------------------------------------------------------------------
+   611                                  ; Parse the command line
+   612                                  ; - look for a hexadecimal number - I/O port number
+   613                                  ; - look for '/' option flag and the following character
+   614                                  ; Implementation:
+   615                                  ; - Skip all non-space characters
+   616                                  ; - Skip all space and tab characters
+   617                                  ; - Parse the number either in decimal or hexadecimal format
+   618                                  ;   hexadecimal format uses 'x' as identifier, which might have one or
+   619                                  ;   more zeros before it
+   620                                  
+   621 0000029F 31D2                    	xor	dx,dx			; DX = 0 - port number goes here
+   622 000002A1 B100                    	mov	cl,0			; CL = 0 - hex indicator (0 = decimal)
+   623 000002A3 1E                      	push	ds
+   624 000002A4 C57712                  	lds	si,[bx+cmd_addr]	; DS:SI - command line
+   625 000002A7 FC                      	cld
+   626                                  
+   627                                  .skip_drv_name_loop:
+   628 000002A8 AC                      	lodsb
+   629 000002A9 3C20                    	cmp	al,' '			; space
+   630 000002AB 7407                    	je	.skip_space
+   631 000002AD 3C09                    	cmp	al,09h			; TAB
+   632 000002AF 7403                    	je	.skip_space
+   633 000002B1 EBF5                    	jmp	.skip_drv_name_loop
    634                                  
-   635                                  skip_drv_name_loop:
-   636 000002B7 AC                      	lodsb
-   637 000002B8 3C20                    	cmp	al,' '			; space
-   638 000002BA 7407                    	je	skip_space
-   639 000002BC 3C09                    	cmp	al,09h			; TAB
-   640 000002BE 7403                    	je	skip_space
-   641 000002C0 EBF5                    	jmp	skip_drv_name_loop
-   642                                  
-   643                                  skip_space_loop:
-   644 000002C2 AC                      	lodsb
-   645                                  
-   646                                  skip_space:
-   647 000002C3 3C20                    	cmp	al,' '			; space
-   648 000002C5 74FB                    	je	skip_space_loop
-   649 000002C7 3C09                    	cmp	al,09h			; TAB
-   650 000002C9 74F7                    	je	skip_space_loop
-   651 000002CB EB01                    	jmp	parse_port
-   652                                  
-   653                                  parse_port_loop:
-   654 000002CD AC                      	lodsb
-   655                                  
-   656                                  parse_port:
-   657 000002CE 3C0D                    	cmp	al,0Dh			; CR - end of cmdline, stop parsing
-   658 000002D0 7465                    	je	port_check
-   659 000002D2 3C0A                    	cmp	al,0Ah			; LF - end of cmdline, stop parsing
-   660 000002D4 7461                    	je	port_check
-   661 000002D6 0C20                    	or	al,20h			; convert letters to lower case
-   662 000002D8 3C78                    	cmp	al,'x'			; hexadecimal identifier?
-   663 000002DA 740F                    	je	use_hex
-   664 000002DC 3C30                    	cmp	al,'0'
-   665 000002DE 7303E9B201              	jb	invalid_argument
-   666 000002E3 3C39                    	cmp	al,'9'
-   667 000002E5 7718                    	ja	above_nine
-   668 000002E7 2C30                    	sub	al,'0'			; convert to binary
-   669 000002E9 EB38                    	jmp	add_digit
-   670                                  
-   671                                  use_hex:
-   672 000002EB 80F900                  	cmp	cl,0			; already seen a hexdecimal identifier?
-   673 000002EE 7403E9A201              	jne	invalid_argument
-   674 000002F3 83FA00                  	cmp	dx,0			; hex flag after a non-zero number?
-   675 000002F6 7403E99A01              	jne	invalid_argument
-   676 000002FB FEC1                    	inc	cl			; set hexadecimal flag
-   677 000002FD EBCE                    	jmp	parse_port_loop
-   678                                  
-   679                                  above_nine:
-   680 000002FF 80F900                  	cmp	cl,0			; hex flag not set, but not a decimal?
-   681 00000302 7503E98E01              	je	invalid_argument
-   682 00000307 3C61                    	cmp	al,'a'
-   683 00000309 7303E98701              	jb	invalid_argument
-   684 0000030E 3C66                    	cmp	al,'f'
-   685 00000310 7603E98001              	ja	invalid_argument
-   686 00000315 2C57                    	sub	al,'a'-10		; convert to binary
-   687                                  
-   688                                  add_hex_digit:
-   689 00000317 D1E2                    	shl	dx,1			; DX = DX << 4
-   690 00000319 D1E2                    	shl	dx,1
-   691 0000031B D1E2                    	shl	dx,1
-   692 0000031D D1E2                    	shl	dx,1
-   693 0000031F 00C2                    	add	dl,al			; add the digit
-   694 00000321 EBAA                    	jmp	parse_port_loop
-   695                                  
-   696                                  add_digit:
-   697 00000323 80F900                  	cmp	cl,0			; hex flag is set?
-   698 00000326 75EF                    	jne	add_hex_digit		; then add a hex digit
-   699 00000328 50                      	push	ax
-   700 00000329 B80A00                  	mov	ax,10
-   701 0000032C F7E2                    	mul	dx			; DX:AX = DX * 10
-   702 0000032E 89C2                    	mov	dx,ax
-   703 00000330 58                      	pop	ax
-   704 00000331 B400                    	mov	ah,0
-   705 00000333 01C2                    	add	dx,ax			; add the digit
-   706 00000335 EB96                    	jmp	parse_port_loop
-   707                                  
-   708                                  port_check:
-   709 00000337 83FA00                  	cmp	dx,0
-   710 0000033A 7503                    	jnz	port_check_range
-   711 0000033C BA4002                  	mov	dx,default_io_port	; DX==0, load the default address
+   635                                  .skip_space_loop:
+   636 000002B3 AC                      	lodsb
+   637                                  
+   638                                  .skip_space:
+   639 000002B4 3C20                    	cmp	al,' '			; space
+   640 000002B6 74FB                    	je	.skip_space_loop
+   641 000002B8 3C09                    	cmp	al,09h			; TAB
+   642 000002BA 74F7                    	je	.skip_space_loop
+   643 000002BC 3C0D                    	cmp	al,0Dh			; CR - end of cmdline, stop parsing
+   644 000002BE 7503E99100              	je	.port_check
+   645 000002C3 3C0A                    	cmp	al,0Ah			; LF - end of cmdline, stop parsing
+   646 000002C5 7503E98A00              	je	.port_check
+   647 000002CA 3C2F                    	cmp	al,'/'			; '/' - options should follow
+   648 000002CC 7417                    	je	.parse_options
+   649 000002CE 09D2                    	or	dx,dx			; port number already has been set?
+   650 000002D0 7403E99502              	jnz	invalid_argument
+   651 000002D5 3C30                    	cmp	al,'0'			; otherwise we expect a number...
+   652 000002D7 7303E98E02              	jb	invalid_argument
+   653 000002DC 3C39                    	cmp	al,'9'
+   654 000002DE 7603E98702              	ja	invalid_argument
+   655 000002E3 EB13                    	jmp	.parse_port
+   656                                  
+   657                                  .parse_options:
+   658 000002E5 AC                      	lodsb
+   659 000002E6 0C20                    	or	al,20h			; convert letters to lower case
+   660 000002E8 3C64                    	cmp	al,'d'			; DSE option?
+   661 000002EA 7403E97B02              	jne	invalid_argument
+   662 000002EF 2EC606[F907]01          	mov	byte cs:[dse],cmos_dse	; set DSE option
+   663 000002F5 EBBC                    	jmp	.skip_space_loop	; continue parsing command line args
+   664                                  
+   665                                  .parse_port_loop:
+   666 000002F7 AC                      	lodsb
+   667                                  
+   668                                  .parse_port:
+   669 000002F8 3C30                    	cmp	al,'0'			; below '0'?
+   670 000002FA 72B8                    	jb	.skip_space		; check for Space, TAB, CR, LF, '/'...
+   671 000002FC 3C39                    	cmp	al,'9'
+   672 000002FE 762A                    	jna	.add_digit		; between '0' and '9' - add a digit
+   673 00000300 0C20                    	or	al,20h			; convert letters to lower case
+   674 00000302 3C78                    	cmp	al,'x'			; hexadecimal identifier?
+   675 00000304 743A                    	je	.use_hex
+   676 00000306 80F900                  	cmp	cl,0			; hex flag not set, but not a decimal?
+   677 00000309 7503E95C02              	je	invalid_argument
+   678 0000030E 3C61                    	cmp	al,'a'
+   679 00000310 7303E95502              	jb	invalid_argument
+   680 00000315 3C66                    	cmp	al,'f'
+   681 00000317 7603E94E02              	ja	invalid_argument
+   682 0000031C 2C57                    	sub	al,'a'-10		; convert to binary
+   683                                  
+   684                                  .add_hex_digit:
+   685 0000031E D1E2                    	shl	dx,1			; DX = DX << 4
+   686 00000320 D1E2                    	shl	dx,1
+   687 00000322 D1E2                    	shl	dx,1
+   688 00000324 D1E2                    	shl	dx,1
+   689 00000326 00C2                    	add	dl,al			; add the digit
+   690 00000328 EBCD                    	jmp	.parse_port_loop
+   691                                  
+   692                                  .add_digit:
+   693 0000032A 2C30                    	sub	al,'0'			; convert to binary
+   694 0000032C 80F900                  	cmp	cl,0			; hex flag is set?
+   695 0000032F 75ED                    	jne	.add_hex_digit		; then add a hex digit
+   696 00000331 50                      	push	ax
+   697 00000332 B80A00                  	mov	ax,10
+   698 00000335 F7E2                    	mul	dx			; DX:AX = DX * 10
+   699 00000337 89C2                    	mov	dx,ax
+   700 00000339 58                      	pop	ax
+   701 0000033A B400                    	mov	ah,0
+   702 0000033C 01C2                    	add	dx,ax			; add the digit
+   703 0000033E EBB7                    	jmp	.parse_port_loop
+   704                                  
+   705                                  .use_hex:
+   706 00000340 80F900                  	cmp	cl,0			; already seen a hexdecimal identifier?
+   707 00000343 7403E92202              	jne	invalid_argument
+   708 00000348 83FA00                  	cmp	dx,0			; hex flag after a non-zero number?
+   709 0000034B 7403E91A02              	jne	invalid_argument
+   710 00000350 FEC1                    	inc	cl			; set hexadecimal flag
+   711 00000352 EBA3                    	jmp	.parse_port_loop
    712                                  
-   713                                  port_check_range:
-   714 0000033F 81FAFE03                	cmp	dx,3FEh			; I/O port shouldn't be above 3FEh
-   715 00000343 7603E95601              	ja	invalid_port
-   716 00000348 81FA0002                	cmp	dx,200h			; I/O port shouldn't be below 200h
-   717 0000034C 7303E94D01              	jb	invalid_port
-   718 00000351 1F                      	pop	ds
-   719 00000352 2E8916[1600]            	mov	cs:[rtc_io_port],dx	; store the port address
-   720                                  
-   721                                  ;-------------------------------------------------------------------------
-   722                                  ; Check if we have a DS12885 RTC at the specified address
-   723                                  
-   724 00000357 B00A                    	mov	al,cmos_control_a	; select control A register
-   725 00000359 B426                    	mov	ah,26h			; turn on oscillator and time keeping
-   726                                  					; set SQW frequency to 1.024 KHz
-   727 0000035B E815FF                  	call	rtc_write		; write control register A
-   728                                  
-   729 0000035E E8FDFE                  	call	rtc_read		; read back control A register
-   730 00000361 3C26                    	cmp	al,26h
-   731 00000363 7403E91801              	jne	no_rtc
+   713                                  .port_check:
+   714 00000354 83FA00                  	cmp	dx,0
+   715 00000357 7503                    	jnz	.port_check_range
+   716 00000359 BA4002                  	mov	dx,default_io_port	; DX==0, load the default address
+   717                                  
+   718                                  .port_check_range:
+   719 0000035C 83FA70                  	cmp	dx,70h			; I/O port can be 70h on
+   720                                  					; Micro 8088 / NuXT without 8088 BIOS?!
+   721 0000035F 7412                    	je	.port_ok
+   722 00000361 81FAFE03                	cmp	dx,3FEh			; I/O port shouldn't be above 3FEh
+   723 00000365 7603E90902              	ja	invalid_port
+   724 0000036A 81FA0002                	cmp	dx,200h			; I/O port shouldn't be below 200h
+   725 0000036E 7303E90002              	jb	invalid_port
+   726                                  .port_ok:
+   727 00000373 1F                      	pop	ds
+   728 00000374 2E8916[1600]            	mov	cs:[rtc_io_port],dx	; store the port address
+   729                                  
+   730                                  ;-------------------------------------------------------------------------
+   731                                  ; Check if we have a DS12885 RTC at the specified address
    732                                  
-   733                                  ; Continue with the RTC initialization
-   734                                  
-   735 00000368 B00B                    	mov	al,cmos_control_b
-   736 0000036A E8F1FE                  	call	rtc_read
-   737 0000036D 88C4                    	mov	ah,al
-   738 0000036F 80E401                  	and	ah,cmos_dse		; clear all bits except of DSE
-   739 00000372 80CC02                  	or	ah,cmos_24hours		; set 24 hours bit, keep BCD format and
-   740                                  					; interrupts disabled
-   741 00000375 B00B                    	mov	al,cmos_control_b
-   742 00000377 E8F9FE                  	call	rtc_write		; write control register B
+   733 00000379 B00A                    	mov	al,cmos_control_a	; select control A register
+   734 0000037B B426                    	mov	ah,26h			; turn on oscillator and time keeping
+   735                                  					; set SQW frequency to 1.024 KHz
+   736 0000037D E8E4FE                  	call	rtc_write		; write control register A
+   737                                  
+   738 00000380 E8CCFE                  	call	rtc_read		; read back control A register
+   739 00000383 3C26                    	cmp	al,26h
+   740 00000385 7403E9CB01              	jne	no_rtc
+   741                                  
+   742                                  ; Continue with the RTC initialization
    743                                  
-   744 0000037A B00C                    	mov	al,cmos_control_c
-   745 0000037C E8DFFE                  	call	rtc_read		; read control register C - reset
-   746                                  					; interrupt flags
-   747                                  
-   748 0000037F B00D                    	mov	al,cmos_control_d
-   749 00000381 E8DAFE                  	call	rtc_read		; read control register D
-   750 00000384 A880                    	test	al,cmos_vrt
-   751 00000386 7527                    	jnz	battery_good		; RTC battery is good
-   752                                  
-   753                                  ; Battery is bad
+   744 0000038A B402                    	mov	ah,cmos_24hours		; set 24 hours bit, select CD format
+   745                                  					; and keep interrupts disabled
+   746 0000038C 2E0A26[F907]            	or	ah,cs:[dse]		; set DSE bit according to the cmd opt.
+   747 00000391 B00B                    	mov	al,cmos_control_b
+   748                                  
+   749 00000393 E8CEFE                  	call	rtc_write		; write control register B
+   750                                  
+   751 00000396 B00C                    	mov	al,cmos_control_c
+   752 00000398 E8B4FE                  	call	rtc_read		; read control register C - reset
+   753                                  					; interrupt flags
    754                                  
-   755 00000388 BA[7B05]                	mov	dx,msg_rtc_batt
-   756 0000038B E83101                  	call	print_string
-   757                                  
-   758                                  ; Set initial time and date - Monday, January 1st, 2024
+   755 0000039B B00D                    	mov	al,cmos_control_d
+   756 0000039D E8AFFE                  	call	rtc_read		; read control register D
+   757 000003A0 A880                    	test	al,cmos_vrt
+   758 000003A2 753F                    	jnz	.battery_good		; RTC battery is good
    759                                  
-   760 0000038E 2EC606[2000]02          	mov	byte cs:[day+1],2	; Monday
-   761 00000394 2EC606[2200]01          	mov	byte cs:[date+1],1	; 1st
-   762 0000039A 2EC606[2400]01          	mov	byte cs:[month+1],1	; January
-   763 000003A0 2EC606[2600]24          	mov	byte cs:[year+1],24h	; 24h
-   764 000003A6 2EC606[2800]20          	mov	byte cs:[century+1],20h	; 20h
-   765 000003AC E836FE                  	call	rtc_set
+   760                                  ; Battery is bad
+   761                                  
+   762 000003A4 BA[6706]                	mov	dx,msg_rtc_batt
+   763 000003A7 E8EA01                  	call	print_string
+   764                                  
+   765                                  ; Set initial time and date - Monday, January 1st, 2024, 00:00:00
    766                                  
-   767                                  battery_good:
-   768                                  
-   769                                  ;-------------------------------------------------------------------------
-   770                                  ; Set BIOS timer variables to RTC time
-   771                                  
-   772 000003AF 53                      	push	bx
-   773                                  
-   774 000003B0 E873FE                  	call	rtc_get
-   775                                  
-   776                                  ; convert time to ticks * 2^11
-   777                                  
-   778                                  ; ticks = seconds * 37287
-   779 000003B3 2EA0[1A00]              	mov	al,cs:[seconds+1]
-   780 000003B7 E8D2FE                  	call	bcd_to_binary		; convert seconds to binary
+   767                                  .reset_clock:
+   768 000003AA BA[8906]                	mov	dx,msg_rtc_inval
+   769 000003AD E8E401                  	call	print_string
+   770 000003B0 2EC606[2700]20          	mov	byte cs:[century+1],20h	; 20h
+   771 000003B6 2EC606[2500]24          	mov	byte cs:[year+1],24h	; 24h
+   772 000003BC 2EC606[2300]01          	mov	byte cs:[month+1],1	; January
+   773 000003C2 2EC606[2100]01          	mov	byte cs:[date+1],1	; 1st
+   774 000003C8 2EC606[1F00]02          	mov	byte cs:[day+1],2	; Monday
+   775 000003CE 2EC606[1D00]00          	mov	byte cs:[hours+1],0
+   776 000003D4 2EC606[1B00]00          	mov	byte cs:[minutes+1],0
+   777 000003DA 2EC606[1900]00          	mov	byte cs:[seconds+1],0
+   778 000003E0 E801FE                  	call	rtc_set
+   779                                  
+   780                                  .battery_good:
    781                                  
-   782 000003BA BAA791                  	mov	dx,37287
-   783 000003BD F7E2                    	mul	dx			; DX:AX = seconds * 37287
+   782                                  ;-------------------------------------------------------------------------
+   783                                  ; Set BIOS timer variables to RTC time
    784                                  
-   785 000003BF 89C6                    	mov	si,ax
-   786 000003C1 89D7                    	mov	di,dx
-   787                                  
-   788                                  ; ticks += minutes * 2237216 = minutes * 8992 + minutes * 34 * 2^16
-   789 000003C3 2EA0[1C00]              	mov	al,cs:[minutes+1]
-   790 000003C7 E8C2FE                  	call	bcd_to_binary		; convert minutes to binary
-   791                                  
-   792 000003CA 89C3                    	mov	bx,ax
-   793 000003CC BA2023                  	mov	dx,8992
-   794 000003CF F7E2                    	mul	dx			; DX:AX = minutes * 8992
+   785 000003E3 E836FE                  	call	rtc_get
+   786                                  
+   787                                  ; Validate date and time
+   788                                  
+   789 000003E6 2EA0[2700]              	mov	al,cs:[century+1]
+   790 000003EA E890FE                  	call	bcd_to_binary
+   791 000003ED 3C14                    	cmp	al,20			; century must be between 19 and 20
+   792 000003EF 77B9                    	ja	.reset_clock
+   793 000003F1 3C13                    	cmp	al,19
+   794 000003F3 72B5                    	jb	.reset_clock
    795                                  
-   796 000003D1 01C6                    	add	si,ax
-   797 000003D3 11D7                    	adc	di,dx
-   798                                  
-   799 000003D5 89D8                    	mov	ax,bx
-   800 000003D7 BA2200                  	mov	dx,34
-   801 000003DA F7E2                    	mul	dx
-   802                                  
-   803 000003DC 01C7                    	add	di,ax
-   804                                  
-   805                                  ; ticks += hours * 134232938 = hours * 15210 + hours * 2048 * 2^16
-   806 000003DE 2EA0[1E00]              	mov	al,cs:[hours+1]
-   807 000003E2 E8A7FE                  	call	bcd_to_binary		; convert hours to binary
+   796 000003F5 2EA0[2500]              	mov	al,cs:[year+1]
+   797 000003F9 E881FE                  	call	bcd_to_binary
+   798 000003FC 3C63                    	cmp	al,99			; year must be between 0 and 99
+   799 000003FE 77AA                    	ja	.reset_clock
+   800 00000400 88C1                    	mov	cl,al			; save the year value in CL
+   801                                  
+   802 00000402 2EA0[2300]              	mov	al,cs:[month+1]
+   803 00000406 3C0C                    	cmp	al,12			; month must be between 1 and 12
+   804 00000408 77A0                    	ja	.reset_clock
+   805 0000040A 3C01                    	cmp	al,1
+   806 0000040C 729C                    	jb	.reset_clock
+   807 0000040E 88C5                    	mov	ch,al			; save the month value to CH
    808                                  
-   809 000003E5 89C3                    	mov	bx,ax
-   810 000003E7 BA6A3B                  	mov	dx,15210
-   811 000003EA F7E2                    	mul	dx			; DX:AX = hours * 15210
-   812                                  
-   813 000003EC 01C6                    	add	si,ax
-   814 000003EE 11D7                    	adc	di,dx
-   815                                  
-   816 000003F0 89D8                    	mov	ax,bx
-   817 000003F2 BA0008                  	mov	dx,2048
-   818 000003F5 F7E2                    	mul	dx			; AX = hours * 2048
-   819                                  
-   820 000003F7 01C7                    	add	di,ax
-   821                                  
-   822                                  ; CX:DX = DI:SI / 2048
-   823 000003F9 B10B                    	mov	cl,11
-   824 000003FB D3EE                    	shr	si,cl
-   825 000003FD 89FA                    	mov	dx,di
-   826 000003FF B105                    	mov	cl,5
-   827 00000401 D3E2                    	shl	dx,cl
-   828 00000403 09F2                    	or	dx,si
+   809                                  ; check for February in a leap year
+   810                                  
+   811 00000410 B400                    	mov	ah,0
+   812 00000412 FEC8                    	dec	al			; AX - month 0 to 11
+   813 00000414 BE[2A00]                	mov	si,days_in_month
+   814 00000417 01C6                    	add	si,ax			; [SI] - days in the current month
+   815 00000419 2EA0[2100]              	mov	al,cs:[date+1]
+   816 0000041D E85DFE                  	call	bcd_to_binary
+   817 00000420 3C01                    	cmp	al,1			; day must be above or equal to 1
+   818 00000422 7286                    	jb	.reset_clock
+   819 00000424 2E8A24                  	mov	ah,cs:[si]		; AH - number of days in the month
+   820 00000427 80FD02                  	cmp	ch,2			; is it Febuary?
+   821 0000042A 7507                    	jne	.check_date
+   822 0000042C 80C903                  	or	cl,3			; is it a leap year
+   823 0000042F 7502                    	jnz	.check_date
+   824 00000431 FEC4                    	inc	ah			; increment number of days for leap year
+   825                                  
+   826                                  .check_date:
+   827 00000433 38E0                    	cmp	al,ah			; AL - current date
+   828 00000435 7603E970FF              	ja	.reset_clock		; AH - days in this month
    829                                  
-   830 00000405 B10B                    	mov	cl,11
-   831 00000407 D3EF                    	shr	di,cl
-   832 00000409 89F9                    	mov	cx,di
-   833                                  
-   834                                  					; CX = high word of tick count
-   835                                  					; DX = low word of tick count
-   836                                  	
-   837 0000040B B401                    	mov	ah,01h			; int 1Ah, function 01h - set time
-   838 0000040D CD1A                    	int	1Ah
-   839 0000040F 5B                      	pop	bx
-   840                                  
-   841                                  ;-------------------------------------------------------------------------
-   842                                  ; Print the RTC I/O port number
-   843                                  
-   844 00000410 BA[4C05]                	mov	dx,msg_rtc_port
-   845 00000413 E8A900                  	call	print_string
-   846 00000416 2EA1[1600]              	mov	ax,cs:[rtc_io_port]
-   847 0000041A E8B800                  	call	print_hex
-   848                                  
-   849                                  ; Print current date and time
-   850                                  
-   851 0000041D BA[6905]                	mov	dx,msg_rtc_time
-   852 00000420 E89C00                  	call	print_string
-   853                                  
-   854 00000423 2E8A26[2800]            	mov	ah,cs:[century+1]
-   855 00000428 2EA0[2600]              	mov	al,cs:[year+1]
-   856 0000042C E8A600                  	call	print_hex		; print 4-digit year
-   857                                  
-   858 0000042F B02D                    	mov	al,'-'			; print a dash (-)
-   859 00000431 E89800                  	call	print_char
-   860                                  
-   861 00000434 2EA0[2400]              	mov	al,cs:[month+1]
-   862 00000438 E8A500                  	call	print_byte		; print 2-digit month
-   863                                  
-   864 0000043B B02D                    	mov	al,'-'			; print a dash (-)
-   865 0000043D E88C00                  	call	print_char
-   866                                  
-   867 00000440 2EA0[2200]              	mov	al,cs:[date+1]
-   868 00000444 E89900                  	call	print_byte		; print 2-digit date
+   830 0000043A 2EA0[1F00]              	mov	al,cs:[day+1]
+   831 0000043E 3C07                    	cmp	al,7			; day must be between 1 and 7
+   832 00000440 7603E965FF              	ja	.reset_clock
+   833 00000445 3C01                    	cmp	al,1
+   834 00000447 7303E95EFF              	jb	.reset_clock
+   835 0000044C 2EA0[1D00]              	mov	al,cs:[hours+1]
+   836 00000450 E82AFE                  	call	bcd_to_binary
+   837 00000453 3C17                    	cmp	al,23			; hours must be between 0 and 23
+   838 00000455 7603E950FF              	ja	.reset_clock
+   839 0000045A 2EA0[1B00]              	mov	al,cs:[minutes+1]
+   840 0000045E E81CFE                  	call	bcd_to_binary
+   841 00000461 3C3B                    	cmp	al,59			; minutes must be between 0 and 59
+   842 00000463 7603E942FF              	ja	.reset_clock
+   843 00000468 2EA0[1900]              	mov	al,cs:[seconds+1]
+   844 0000046C E80EFE                  	call	bcd_to_binary
+   845 0000046F 3C3B                    	cmp	al,59			; seconds must be between 0 and 59
+   846 00000471 7603E934FF              	ja	.reset_clock
+   847                                  
+   848 00000476 53                      	push	bx
+   849                                  
+   850                                  ; convert time to ticks * 2^11
+   851                                  
+   852                                  ; ticks = seconds * 37287
+   853 00000477 2EA0[1900]              	mov	al,cs:[seconds+1]
+   854 0000047B E8FFFD                  	call	bcd_to_binary		; convert seconds to binary
+   855                                  
+   856 0000047E BAA791                  	mov	dx,37287
+   857 00000481 F7E2                    	mul	dx			; DX:AX = seconds * 37287
+   858                                  
+   859 00000483 89C6                    	mov	si,ax
+   860 00000485 89D7                    	mov	di,dx
+   861                                  
+   862                                  ; ticks += minutes * 2237216 = minutes * 8992 + minutes * 34 * 2^16
+   863 00000487 2EA0[1B00]              	mov	al,cs:[minutes+1]
+   864 0000048B E8EFFD                  	call	bcd_to_binary		; convert minutes to binary
+   865                                  
+   866 0000048E 89C3                    	mov	bx,ax
+   867 00000490 BA2023                  	mov	dx,8992
+   868 00000493 F7E2                    	mul	dx			; DX:AX = minutes * 8992
    869                                  
-   870 00000447 B020                    	mov	al,' '			; print a space
-   871 00000449 E88000                  	call	print_char
+   870 00000495 01C6                    	add	si,ax
+   871 00000497 11D7                    	adc	di,dx
    872                                  
-   873 0000044C 2EA0[1E00]              	mov	al,cs:[hours+1]
-   874 00000450 E88D00                  	call	print_byte		; print 2-digit hours
-   875                                  	
-   876 00000453 B03A                    	mov	al,':'			; print a colon (:)
-   877 00000455 E87400                  	call	print_char
+   873 00000499 89D8                    	mov	ax,bx
+   874 0000049B BA2200                  	mov	dx,34
+   875 0000049E F7E2                    	mul	dx
+   876                                  
+   877 000004A0 01C7                    	add	di,ax
    878                                  
-   879 00000458 2EA0[1C00]              	mov	al,cs:[minutes+1]
-   880 0000045C E88100                  	call	print_byte		; print 2-digit minutes
-   881                                  	
-   882 0000045F B03A                    	mov	al,':'			; print a colon (:)
-   883 00000461 E86800                  	call	print_char
-   884                                  
-   885 00000464 2EA0[1A00]              	mov	al,cs:[seconds+1]
-   886 00000468 E87500                  	call	print_byte		; print 2-digit seconds
-   887                                  
-   888 0000046B BA[A306]                	mov	dx,msg_cr_lf
-   889 0000046E E84E00                  	call	print_string
-   890                                  
-   891 00000471 C7470E[A802]            	mov	word [bx+end_addr],init	; resident part ends at "init"
-   892 00000476 8C4F10                  	mov	[bx+end_addr+2],cs
-   893 00000479 C6470D01                	mov	byte [bx+num_units],1	; 1 unit, keeps DOS happy?!
-   894                                  
-   895 0000047D E9F3FB                  	jmp	exit
-   896                                  	
-   897                                  no_rtc:
-   898 00000480 52                      	push	dx
-   899 00000481 BA[9E05]                	mov	dx,msg_no_rtc
-   900 00000484 E83800                  	call	print_string
-   901 00000487 5A                      	pop	dx
-   902 00000488 89D0                    	mov	ax,dx
-   903 0000048A E84800                  	call	print_hex
-   904 0000048D BA[A306]                	mov	dx,msg_cr_lf
-   905 00000490 E82C00                  	call	print_string
-   906 00000493 EB1B                    	jmp	init_error
-   907                                  	
-   908                                  invalid_argument:
-   909 00000495 1F                      	pop	ds
-   910 00000496 BA[E805]                	mov	dx,msg_inv_arg
-   911 00000499 E82300                  	call	print_string
-   912 0000049C EB12                    	jmp	init_error
-   913                                  
-   914                                  invalid_port:
-   915 0000049E 1F                      	pop	ds
-   916 0000049F 89D0                    	mov	ax,dx
-   917 000004A1 BA[C905]                	mov	dx,msg_inv_port
-   918 000004A4 E81800                  	call	print_string
-   919 000004A7 E82B00                  	call	print_hex
-   920 000004AA BA[0D06]                	mov	dx,msg_usage
-   921 000004AD E80F00                  	call	print_string
+   879                                  ; ticks += hours * 134232938 = hours * 15210 + hours * 2048 * 2^16
+   880 000004A2 2EA0[1D00]              	mov	al,cs:[hours+1]
+   881 000004A6 E8D4FD                  	call	bcd_to_binary		; convert hours to binary
+   882                                  
+   883 000004A9 89C3                    	mov	bx,ax
+   884 000004AB BA6A3B                  	mov	dx,15210
+   885 000004AE F7E2                    	mul	dx			; DX:AX = hours * 15210
+   886                                  
+   887 000004B0 01C6                    	add	si,ax
+   888 000004B2 11D7                    	adc	di,dx
+   889                                  
+   890 000004B4 89D8                    	mov	ax,bx
+   891 000004B6 BA0008                  	mov	dx,2048
+   892 000004B9 F7E2                    	mul	dx			; AX = hours * 2048
+   893                                  
+   894 000004BB 01C7                    	add	di,ax
+   895                                  
+   896                                  ; CX:DX = DI:SI / 2048
+   897 000004BD B10B                    	mov	cl,11
+   898 000004BF D3EE                    	shr	si,cl
+   899 000004C1 89FA                    	mov	dx,di
+   900 000004C3 B105                    	mov	cl,5
+   901 000004C5 D3E2                    	shl	dx,cl
+   902 000004C7 09F2                    	or	dx,si
+   903                                  
+   904 000004C9 B10B                    	mov	cl,11
+   905 000004CB D3EF                    	shr	di,cl
+   906 000004CD 89F9                    	mov	cx,di
+   907                                  					; CX = high word of tick count
+   908                                  					; DX = low word of tick count
+   909 000004CF B401                    	mov	ah,01h			; int 1Ah, function 01h - set time
+   910 000004D1 CD1A                    	int	1Ah
+   911 000004D3 5B                      	pop	bx
+   912                                  
+   913                                  ;-------------------------------------------------------------------------
+   914                                  ; Print the RTC I/O port number
+   915                                  
+   916 000004D4 BA[2106]                	mov	dx,msg_rtc_port
+   917 000004D7 E8BA00                  	call	print_string
+   918 000004DA 2EA1[1600]              	mov	ax,cs:[rtc_io_port]
+   919 000004DE E8C900                  	call	print_hex
+   920                                  
+   921                                  ; Print current date and time
    922                                  
-   923                                  init_error:
-   924                                  
-   925 000004B0 C7470E0000              	mov	word [bx+end_addr],0	; not staying in memory
-   926 000004B5 8C4F10                  	mov	[bx+end_addr+2],cs
-   927 000004B8 C6470D01                	mov	byte [bx+num_units],1	; 1 unit, keeps DOS happy?!
-   928                                  
-   929 000004BC E9AFFB                  	jmp	error
-   930                                  
-   931                                  ;=========================================================================
-   932                                  ; print_string - print '$' terminated string
-   933                                  ; Input:
-   934                                  ;	CS:DX - string to print
-   935                                  ; Output:
-   936                                  ;	none, string printed
-   937                                  ;-------------------------------------------------------------------------
-   938                                  print_string:
-   939 000004BF 50                      	push	ax
-   940 000004C0 1E                      	push	ds
-   941 000004C1 8CC8                    	mov	ax,cs
-   942 000004C3 8ED8                    	mov	ds,ax
-   943 000004C5 B409                    	mov	ah,09h
-   944 000004C7 CD21                    	int	21h			; DOS function 09h - print string
-   945 000004C9 1F                      	pop	ds
-   946 000004CA 58                      	pop	ax
-   947 000004CB C3                      	ret
-   948                                  
-   949                                  ;=========================================================================
-   950                                  ; print_char - print character
-   951                                  ; Input:
-   952                                  ;	AL - character to print
-   953                                  ; Output:
-   954                                  ;	none, character printed
-   955                                  ;	AH - trashed
-   956                                  ;-------------------------------------------------------------------------
-   957                                  print_char:
-   958 000004CC 52                      	push	dx
-   959 000004CD B402                    	mov	ah,02h
-   960 000004CF 88C2                    	mov	dl,al			; character to print
-   961 000004D1 CD21                    	int	21h			; DOS function 02h - print character
-   962 000004D3 5A                      	pop	dx
-   963 000004D4 C3                      	ret
+   923 000004E1 BA[3806]                	mov	dx,msg_rtc_time
+   924 000004E4 E8AD00                  	call	print_string
+   925                                  
+   926 000004E7 2E8A26[2700]            	mov	ah,cs:[century+1]
+   927 000004EC 2EA0[2500]              	mov	al,cs:[year+1]
+   928 000004F0 E8B700                  	call	print_hex		; print 4-digit year
+   929                                  
+   930 000004F3 B02D                    	mov	al,'-'			; print a dash (-)
+   931 000004F5 E8A900                  	call	print_char
+   932                                  
+   933 000004F8 2EA0[2300]              	mov	al,cs:[month+1]
+   934 000004FC E8B600                  	call	print_byte		; print 2-digit month
+   935                                  
+   936 000004FF B02D                    	mov	al,'-'			; print a dash (-)
+   937 00000501 E89D00                  	call	print_char
+   938                                  
+   939 00000504 2EA0[2100]              	mov	al,cs:[date+1]
+   940 00000508 E8AA00                  	call	print_byte		; print 2-digit date
+   941                                  
+   942 0000050B B020                    	mov	al,' '			; print a space
+   943 0000050D E89100                  	call	print_char
+   944                                  
+   945 00000510 2EA0[1D00]              	mov	al,cs:[hours+1]
+   946 00000514 E89E00                  	call	print_byte		; print 2-digit hours
+   947                                  	
+   948 00000517 B03A                    	mov	al,':'			; print a colon (:)
+   949 00000519 E88500                  	call	print_char
+   950                                  
+   951 0000051C 2EA0[1B00]              	mov	al,cs:[minutes+1]
+   952 00000520 E89200                  	call	print_byte		; print 2-digit minutes
+   953                                  	
+   954 00000523 B03A                    	mov	al,':'			; print a colon (:)
+   955 00000525 E87900                  	call	print_char
+   956                                  
+   957 00000528 2EA0[1900]              	mov	al,cs:[seconds+1]
+   958 0000052C E88600                  	call	print_byte		; print 2-digit seconds
+   959                                  
+   960 0000052F BA[4A06]                	mov	dx,msg_rtc_dse_ena	; assume DSE is enabled
+   961 00000532 2E803E[F907]01          	cmp	byte cs:[dse],cmos_dse	; is it really enabled?
+   962 00000538 7403                    	je	.print_dse
+   963 0000053A BA[5806]                	mov	dx,msg_rtc_dse_dis
    964                                  
-   965                                  ;=========================================================================
-   966                                  ; print_hex - print 16-bit number in hexadecimal format
-   967                                  ; Input:
-   968                                  ;	AX - number to print
-   969                                  ; Output:
-   970                                  ;	none
-   971                                  ;-------------------------------------------------------------------------
-   972                                  print_hex:
-   973 000004D5 86C4                    	xchg	al,ah
-   974 000004D7 E80600                  	call	print_byte		; print the upper byte
-   975 000004DA 86C4                    	xchg	al,ah
-   976 000004DC E80100                  	call	print_byte		; print the lower byte
-   977 000004DF C3                      	ret
-   978                                  
-   979                                  ;=========================================================================
-   980                                  ; print_byte - print a byte in hexadecimal
-   981                                  ; Input:
-   982                                  ;	AL - byte to print
-   983                                  ; Output:
-   984                                  ;	none
-   985                                  ;-------------------------------------------------------------------------
-   986                                  print_byte:
-   987 000004E0 D0C0                    	rol	al,1
-   988 000004E2 D0C0                    	rol	al,1
-   989 000004E4 D0C0                    	rol	al,1
-   990 000004E6 D0C0                    	rol	al,1
-   991 000004E8 E80C00                  	call	print_digit
-   992 000004EB D0C0                    	rol	al,1
-   993 000004ED D0C0                    	rol	al,1
-   994 000004EF D0C0                    	rol	al,1
-   995 000004F1 D0C0                    	rol	al,1
-   996 000004F3 E80100                  	call	print_digit
-   997 000004F6 C3                      	ret	
-   998                                  
-   999                                  ;=========================================================================
-  1000                                  ; print_digit - print hexadecimal digit
-  1001                                  ; Input:
-  1002                                  ;	AL - bits 3...0 - digit to print (0...F)
-  1003                                  ; Output:
-  1004                                  ;	none
-  1005                                  ;-------------------------------------------------------------------------
-  1006                                  print_digit:
-  1007 000004F7 50                      	push	ax
-  1008 000004F8 240F                    	and	al,0Fh
-  1009 000004FA 0430                    	add	al,'0'			; convert to ASCII
-  1010 000004FC 3C39                    	cmp	al,'9'			; less or equal 9?
-  1011 000004FE 7602                    	jna	.1
-  1012 00000500 0407                    	add	al,'A'-'9'-1		; a hex digit
-  1013                                  .1:
-  1014 00000502 E8C7FF                  	call	print_char
-  1015 00000505 58                      	pop	ax
-  1016 00000506 C3                      	ret
-  1017                                  
-  1018                                  ;=========================================================================
-  1019                                  ; Messages for the initialization routine
-  1020                                  
-  1021 00000507 445331323838352052-     msg_signin	db	'DS12885 RTC Driver, Version 1.0. '
-  1021 00000510 544320447269766572-
-  1021 00000519 2C2056657273696F6E-
-  1021 00000522 20312E302E20       
-  1022 00000528 436F70797269676874-     		db	'Copyright (C) 2024 Sergey Kiselev'
-  1022 00000531 202843292032303234-
-  1022 0000053A 20536572676579204B-
-  1022 00000543 6973656C6576       
-  1023 00000549 0D0A24                  		db	0Dh, 0Ah, '$'
-  1024 0000054C 5573696E6720525443-     msg_rtc_port	db	'Using RTC at the I/O port 0x$'
-  1024 00000555 206174207468652049-
-  1024 0000055E 2F4F20706F72742030-
-  1024 00000567 7824               
-  1025 00000569 2E204461746520616E-     msg_rtc_time	db	'. Date and time: $'
-  1025 00000572 642074696D653A2024 
-  1026 0000057B 075761726E696E673A-     msg_rtc_batt	db	07h, 'Warning: The RTC battery is bad', 0Dh, 0Ah, '$'
-  1026 00000584 205468652052544320-
-  1026 0000058D 626174746572792069-
-  1026 00000596 73206261640D0A24   
-  1027 0000059E 074572726F723A204E-     msg_no_rtc	db	07h, 'Error: No RTC detected at the I/O port 0x$'
-  1027 000005A7 6F2052544320646574-
-  1027 000005B0 656374656420617420-
-  1027 000005B9 74686520492F4F2070-
-  1027 000005C2 6F727420307824     
-  1028 000005C9 074572726F723A2049-     msg_inv_port	db	07h, 'Error: Invalid port number 0x$'
-  1028 000005D2 6E76616C696420706F-
-  1028 000005DB 7274206E756D626572-
-  1028 000005E4 20307824           
-  1029 000005E8 074572726F723A2049-     msg_inv_arg	db	07h, 'Error: Invalid command line argument'
-  1029 000005F1 6E76616C696420636F-
-  1029 000005FA 6D6D616E64206C696E-
-  1029 00000603 6520617267756D656E-
-  1029 0000060C 74                 
-  1030 0000060D 0D0A55736167653A20-     msg_usage	db	0Dh, 0Ah, 'Usage: DSCLOCK.SYS [port]', 0Dh, 0Ah
-  1030 00000616 4453434C4F434B2E53-
-  1030 0000061F 5953205B706F72745D-
-  1030 00000628 0D0A               
-  1031 0000062A 2020706F7274202D20-     		db	'  port - decimal or hexadecimal RTC I/O port number.'
-  1031 00000633 646563696D616C206F-
-  1031 0000063C 722068657861646563-
-  1031 00000645 696D616C2052544320-
-  1031 0000064E 492F4F20706F727420-
-  1031 00000657 6E756D6265722E     
-  1032 0000065E 0D0A2020537570706F-     		db	0Dh, 0Ah, '  Supported port range is 0x200 - 0x3FF'
-  1032 00000667 7274656420706F7274-
-  1032 00000670 2072616E6765206973-
-  1032 00000679 203078323030202D20-
-  1032 00000682 3078334646         
-  1033 00000687 0D0A4578616D706C65-     		db	0Dh, 0Ah, 'Example: DSCLOCK.SYS 0x240'
-  1033 00000690 3A204453434C4F434B-
-  1033 00000699 2E5359532030783234-
-  1033 000006A2 30                 
-  1034 000006A3 0D0A24                  msg_cr_lf	db	0Dh, 0AH, '$'
+   965                                  .print_dse:
+   966 0000053D E85400                  	call	print_string
+   967                                  
+   968 00000540 BA[F607]                	mov	dx,msg_cr_lf
+   969 00000543 E84E00                  	call	print_string
+   970                                  
+   971 00000546 C7470E[9902]            	mov	word [bx+end_addr],init	; resident part ends at "init"
+   972 0000054B 8C4F10                  	mov	[bx+end_addr+2],cs
+   973 0000054E C6470D01                	mov	byte [bx+num_units],1	; 1 unit, keeps DOS happy?!
+   974                                  
+   975 00000552 E91DFB                  	jmp	exit
+   976                                  	
+   977                                  no_rtc:
+   978 00000555 52                      	push	dx
+   979 00000556 BA[C506]                	mov	dx,msg_no_rtc
+   980 00000559 E83800                  	call	print_string
+   981 0000055C 5A                      	pop	dx
+   982 0000055D 89D0                    	mov	ax,dx
+   983 0000055F E84800                  	call	print_hex
+   984 00000562 BA[F607]                	mov	dx,msg_cr_lf
+   985 00000565 E82C00                  	call	print_string
+   986 00000568 EB1B                    	jmp	init_error
+   987                                  	
+   988                                  invalid_argument:
+   989 0000056A 1F                      	pop	ds
+   990 0000056B BA[0F07]                	mov	dx,msg_inv_arg
+   991 0000056E E82300                  	call	print_string
+   992 00000571 EB12                    	jmp	init_error
+   993                                  
+   994                                  invalid_port:
+   995 00000573 1F                      	pop	ds
+   996 00000574 89D0                    	mov	ax,dx
+   997 00000576 BA[F006]                	mov	dx,msg_inv_port
+   998 00000579 E81800                  	call	print_string
+   999 0000057C E82B00                  	call	print_hex
+  1000 0000057F BA[3407]                	mov	dx,msg_usage
+  1001 00000582 E80F00                  	call	print_string
+  1002                                  
+  1003                                  init_error:
+  1004                                  
+  1005 00000585 C7470E0000              	mov	word [bx+end_addr],0	; not staying in memory
+  1006 0000058A 8C4F10                  	mov	[bx+end_addr+2],cs
+  1007 0000058D C6470D01                	mov	byte [bx+num_units],1	; 1 unit, keeps DOS happy?!
+  1008                                  
+  1009 00000591 E9D9FA                  	jmp	error
+  1010                                  
+  1011                                  ;=========================================================================
+  1012                                  ; print_string - print '$' terminated string
+  1013                                  ; Input:
+  1014                                  ;	CS:DX - string to print
+  1015                                  ; Output:
+  1016                                  ;	none, string printed
+  1017                                  ;-------------------------------------------------------------------------
+  1018                                  print_string:
+  1019 00000594 50                      	push	ax
+  1020 00000595 1E                      	push	ds
+  1021 00000596 8CC8                    	mov	ax,cs
+  1022 00000598 8ED8                    	mov	ds,ax
+  1023 0000059A B409                    	mov	ah,09h
+  1024 0000059C CD21                    	int	21h			; DOS function 09h - print string
+  1025 0000059E 1F                      	pop	ds
+  1026 0000059F 58                      	pop	ax
+  1027 000005A0 C3                      	ret
+  1028                                  
+  1029                                  ;=========================================================================
+  1030                                  ; print_char - print character
+  1031                                  ; Input:
+  1032                                  ;	AL - character to print
+  1033                                  ; Output:
+  1034                                  ;	none, character printed
+  1035                                  ;	AH - trashed
+  1036                                  ;-------------------------------------------------------------------------
+  1037                                  print_char:
+  1038 000005A1 52                      	push	dx
+  1039 000005A2 B402                    	mov	ah,02h
+  1040 000005A4 88C2                    	mov	dl,al			; character to print
+  1041 000005A6 CD21                    	int	21h			; DOS function 02h - print character
+  1042 000005A8 5A                      	pop	dx
+  1043 000005A9 C3                      	ret
+  1044                                  
+  1045                                  ;=========================================================================
+  1046                                  ; print_hex - print 16-bit number in hexadecimal format
+  1047                                  ; Input:
+  1048                                  ;	AX - number to print
+  1049                                  ; Output:
+  1050                                  ;	none
+  1051                                  ;-------------------------------------------------------------------------
+  1052                                  print_hex:
+  1053 000005AA 86C4                    	xchg	al,ah
+  1054 000005AC E80600                  	call	print_byte		; print the upper byte
+  1055 000005AF 86C4                    	xchg	al,ah
+  1056 000005B1 E80100                  	call	print_byte		; print the lower byte
+  1057 000005B4 C3                      	ret
+  1058                                  
+  1059                                  ;=========================================================================
+  1060                                  ; print_byte - print a byte in hexadecimal
+  1061                                  ; Input:
+  1062                                  ;	AL - byte to print
+  1063                                  ; Output:
+  1064                                  ;	none
+  1065                                  ;-------------------------------------------------------------------------
+  1066                                  print_byte:
+  1067 000005B5 D0C0                    	rol	al,1
+  1068 000005B7 D0C0                    	rol	al,1
+  1069 000005B9 D0C0                    	rol	al,1
+  1070 000005BB D0C0                    	rol	al,1
+  1071 000005BD E80C00                  	call	print_digit
+  1072 000005C0 D0C0                    	rol	al,1
+  1073 000005C2 D0C0                    	rol	al,1
+  1074 000005C4 D0C0                    	rol	al,1
+  1075 000005C6 D0C0                    	rol	al,1
+  1076 000005C8 E80100                  	call	print_digit
+  1077 000005CB C3                      	ret	
+  1078                                  
+  1079                                  ;=========================================================================
+  1080                                  ; print_digit - print hexadecimal digit
+  1081                                  ; Input:
+  1082                                  ;	AL - bits 3...0 - digit to print (0...F)
+  1083                                  ; Output:
+  1084                                  ;	none
+  1085                                  ;-------------------------------------------------------------------------
+  1086                                  print_digit:
+  1087 000005CC 50                      	push	ax
+  1088 000005CD 240F                    	and	al,0Fh
+  1089 000005CF 0430                    	add	al,'0'			; convert to ASCII
+  1090 000005D1 3C39                    	cmp	al,'9'			; less or equal 9?
+  1091 000005D3 7602                    	jna	.1
+  1092 000005D5 0407                    	add	al,'A'-'9'-1		; a hex digit
+  1093                                  .1:
+  1094 000005D7 E8C7FF                  	call	print_char
+  1095 000005DA 58                      	pop	ax
+  1096 000005DB C3                      	ret
+  1097                                  
+  1098                                  ;=========================================================================
+  1099                                  ; Messages for the initialization routine
+  1100                                  
+  1101 000005DC 445331323838352052-     msg_signin	db	'DS12885 RTC Driver, Version 1.1. '
+  1101 000005E5 544320447269766572-
+  1101 000005EE 2C2056657273696F6E-
+  1101 000005F7 20312E312E20       
+  1102 000005FD 436F70797269676874-     		db	'Copyright (C) 2024 Sergey Kiselev'
+  1102 00000606 202843292032303234-
+  1102 0000060F 20536572676579204B-
+  1102 00000618 6973656C6576       
+  1103 0000061E 0D0A24                  		db	0Dh, 0Ah, '$'
+  1104 00000621 525443206174207468-     msg_rtc_port	db	'RTC at the I/O port 0x$'
+  1104 0000062A 6520492F4F20706F72-
+  1104 00000633 7420307824         
+  1105 00000638 3B204461746520616E-     msg_rtc_time	db	'; Date and time: $'
+  1105 00000641 642074696D653A2024 
+  1106 0000064A 3B2044534520656E61-     msg_rtc_dse_ena	db	'; DSE enabled$'
+  1106 00000653 626C656424         
+  1107 00000658 3B2044534520646973-     msg_rtc_dse_dis	db	'; DSE disabled$'
+  1107 00000661 61626C656424       
+  1108 00000667 5761726E696E673A20-     msg_rtc_batt	db	'Warning: The RTC battery is bad', 0Dh, 0Ah, '$'
+  1108 00000670 546865205254432062-
+  1108 00000679 617474657279206973-
+  1108 00000682 206261640D0A24     
+  1109 00000689 075761726E696E673A-     msg_rtc_inval	db	07h, 'Warning: Invalid date or time. '
+  1109 00000692 20496E76616C696420-
+  1109 0000069B 64617465206F722074-
+  1109 000006A4 696D652E20         
+  1110 000006A9 53657474696E672074-     		db	'Setting to default values', 0Dh, 0Ah, '$'
+  1110 000006B2 6F2064656661756C74-
+  1110 000006BB 2076616C7565730D0A-
+  1110 000006C4 24                 
+  1111 000006C5 074572726F723A204E-     msg_no_rtc	db	07h, 'Error: No RTC detected at the I/O port 0x$'
+  1111 000006CE 6F2052544320646574-
+  1111 000006D7 656374656420617420-
+  1111 000006E0 74686520492F4F2070-
+  1111 000006E9 6F727420307824     
+  1112 000006F0 074572726F723A2049-     msg_inv_port	db	07h, 'Error: Invalid port number 0x$'
+  1112 000006F9 6E76616C696420706F-
+  1112 00000702 7274206E756D626572-
+  1112 0000070B 20307824           
+  1113 0000070F 074572726F723A2049-     msg_inv_arg	db	07h, 'Error: Invalid command line argument'
+  1113 00000718 6E76616C696420636F-
+  1113 00000721 6D6D616E64206C696E-
+  1113 0000072A 6520617267756D656E-
+  1113 00000733 74                 
+  1114 00000734 0D0A55736167653A20-     msg_usage	db	0Dh, 0Ah, 'Usage: DSCLOCK.SYS [port] [/D]', 0Dh, 0Ah
+  1114 0000073D 4453434C4F434B2E53-
+  1114 00000746 5953205B706F72745D-
+  1114 0000074F 205B2F445D0D0A     
+  1115 00000756 2020706F7274202D20-     		db	'  port - decimal or hexadecimal RTC I/O port number.'
+  1115 0000075F 646563696D616C206F-
+  1115 00000768 722068657861646563-
+  1115 00000771 696D616C2052544320-
+  1115 0000077A 492F4F20706F727420-
+  1115 00000783 6E756D6265722E     
+  1116 0000078A 0D0A20202020537570-     		db	0Dh, 0Ah, '    Supported port range is 0x200 - 0x3FF'
+  1116 00000793 706F7274656420706F-
+  1116 0000079C 72742072616E676520-
+  1116 000007A5 697320307832303020-
+  1116 000007AE 2D203078334646     
+  1117 000007B5 0D0A20202F44202020-     		db	0Dh, 0Ah, '  /D   - enable daylight saving.'
+  1117 000007BE 2D20656E61626C6520-
+  1117 000007C7 6461796C6967687420-
+  1117 000007D0 736176696E672E     
+  1118 000007D7 0D0A4578616D706C65-     		db	0Dh, 0Ah, 'Example: DSCLOCK.SYS 0x240 /D'
+  1118 000007E0 3A204453434C4F434B-
+  1118 000007E9 2E5359532030783234-
+  1118 000007F2 30202F44           
+  1119 000007F6 0D0A24                  msg_cr_lf	db	0Dh, 0AH, '$'
+  1120                                  
+  1121                                  ; Data for the initialization routine
+  1122 000007F9 00                      dse		db	0		; DSE flag: 0 - disable; 1 - enable
