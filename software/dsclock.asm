@@ -113,9 +113,15 @@ device_header	dw	0FFFFh, 0FFFFh	; next device pointer - last device
 ;-------------------------------------------------------------------------
 request_ptr	dd	0		; pointer to the request header
 rtc_io_port	dw	0240h		; use I/O port 240h by default
-hours		db	0		; last hours value returned
-minutes		db	0		; last minutes value returned
-seconds		db	0		; last seconds value returned
+seconds		db	cmos_seconds,0	; last seconds value read or written
+minutes		db	cmos_minutes,0	; last minutes value read or written
+hours		db	cmos_hours,0	; last hours value read or written
+day		db	cmos_day,0	; last day value read or written
+date		db	cmos_date,0	; last date value read or written
+month		db	cmos_month,0	; last month value read or written
+year		db	cmos_year,0	; last year value read or written
+century		db	cmos_century,0	; last century value read or written
+num_rtc_regs	equ	($-seconds)/2	; number of RTC registers
 ticks		dw	0		; initial ticks value for read time
 days_in_month	db	31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
 
@@ -183,14 +189,15 @@ exit:
 ;	[SI] = 6-byte sequence populated with the current clock date and time
 ;-------------------------------------------------------------------------
 read:
-	call	rtc_get_time		; get current time
-	mov	al,ch			; CH = BCD hours
+	call	rtc_get			; get current time and date
+	pushf				; save time changed flag
+	mov	al,cs:[hours+1]		; AL = BSD hours
 	call	bcd_to_binary		; convert to binary
 	mov	[si+clk_hours],al
-	mov	al,cl			; CL = BCD minutes
+	mov	al,cs:[minutes+1]	; AL = BCD minutes
 	call	bcd_to_binary		; convert to binary
 	mov	[si+clk_minutes],al
-	mov	al,dh			; DH = BCD seconds
+	mov	al,cs:[seconds+1]	; AL = BCD seconds
 	call	bcd_to_binary		; convert to binary
 	mov	[si+clk_seconds],al
 
@@ -205,13 +212,10 @@ read:
 	mov	ax,dx			; AX = low word of tick count
 	pop	dx
 	pop	cx
-	cmp	dh,cs:[seconds]		; different seconds value?
-	jne	.reset_ticks
-	cmp	cl,cs:[minutes]		; different minutes value?
-	jne	.reset_ticks
-	cmp	ch,cs:[hours]		; different hours value?
+	popf				; ZF = time changed flag
+	jnz	.reset_ticks		; time changed since last call
 
-; Still the same hour, minutes, and seconds
+; Still the same time (up to seconds)
 ; calculate the centisecond based on ticks difference
 
 	sub	ax,cs:[ticks]		; find the difference between the
@@ -227,9 +231,6 @@ read:
 	jmp	.return_cseconds
 
 .reset_ticks:
-	mov	cs:[seconds],dh		; store seconds value
-	mov	cs:[minutes],cl		; store minutes value
-	mov	cs:[hours],ch		; store hours value
 	mov	cs:[ticks],ax		; store ticks value
 	mov	dl,0			; centiseconds = 0
 
@@ -238,19 +239,18 @@ read:
 
 ; calculate days since 1/1/1980
 
-	call	rtc_get_date		; get current date
-	mov	al,ch			; CH = BCD century
+	mov	al,cs:[century+1]	; AL = BCD century
 	call	bcd_to_binary
-	mov	ch,al
-	mov	al,cl			; CL = BCD year
+	mov	ch,al			; CH = binary century
+	mov	al,cs:[year+1]		; AL = BCD year
 	call	bcd_to_binary
-	mov	cl,al
-	mov	al,dh			; DH = BCD month
+	mov	cl,al			; CL = binary year
+	mov	al,cs:[month+1]		; AL = BCD month
 	call	bcd_to_binary
-	mov	dh,al
-	mov	al,dl			; DL = BCD date
+	mov	dh,al			; DH = binary month
+	mov	al,cs:[date+1]		; AL = BCD date
 	call	bcd_to_binary
-	mov	dl,al
+	mov	dl,al			; DL = binary date
 
 	push	bx
 	xor	bx,bx			; result - days since 1/1/1980
@@ -315,21 +315,30 @@ read:
 write:
 	mov	al,byte [si+clk_hours]
 	call	binary_to_bcd		; convert to BCD
-	mov	ch,al			; CH = BCD hours
+	mov	cs:[hours+1],al		; save BCD hours
 	mov	al,byte [si+clk_minutes]
 	call	binary_to_bcd		; convert to BCD
-	mov	cl,al			; CL = BCD minutes
+	mov	cs:[minutes+1],al	; save BCD minutes
 	mov	al,byte [si+clk_seconds]
 	call	binary_to_bcd		; convert to BCD
-	mov	dh,al			; DH = BCD seconds
-	mov	dl,0			; daylight savings flag - not set
-	call	rtc_set_time		; set the time
+	mov	cs:[seconds+1],al	; save BCD seconds
 
 	push	bx
 
 	mov	ax,word [si+clk_days]	; days since 1/1/1980
 
-; FIXME - driver does not set the day of the week (driver is not using it)
+; calculate the day of the week
+
+	push	ax
+	add	ax,2			; January 1st 1980 is a Tuesday
+	xor	dx,dx			; DX:AX - days since 1/1/1980
+	mov	bx,7			; 7 days a week
+	div	bx			; DL - remainer day of the week
+	inc	dl			; days of the week are 1-based
+	mov	cs:[day+1],dl		; save day of the week
+	pop	ax
+
+; calculate the date
 
 	mov	cx,1461			; 1461 in a 4 year cycle (365*3+366)
 	xor	dx,dx			; DX:AX = days since 1/1/1980
@@ -340,11 +349,11 @@ write:
 	add	cl,80			; the starting year is 1980
 	mov	ch,19			; CH = century, assume 20th century
 	cmp	cl,100
-	jb	.twentieth		; the year is below 100?
+	jb	.twentieth_century	; the year is below 100?
 	sub	cl,100			; subtract 100 from the year
 	inc	ch			; increment the century
 
-.twentieth:
+.twentieth_century:
 	mov	ax,dx			; AX - remainder = the day in the
 					; current 4 year cycle
 
@@ -387,73 +396,37 @@ write:
 .set_date:
 	mov	al,ch
 	call	binary_to_bcd
-	mov	ch,al			; CH = BCD century
+	mov	cs:[century+1],al	; save BCD century
 	mov	al,cl
 	call	binary_to_bcd
-	mov	cl,al			; CL = BCD year
+	mov	cs:[year+1],al		; save BCD year
 	mov	al,dh
 	call	binary_to_bcd
-	mov	dh,al			; DH = BCD month
+	mov	cs:[month+1],al		; save BCD month
 	mov	al,dl
 	call	binary_to_bcd
-	mov	dl,al			; DL = BCD date
+	mov	cs:[date+1],al		; save BCD date
 
-	call	rtc_set_date
+	call	rtc_set
 
 	pop	bx
 
 	jmp	exit
 
 ;=========================================================================
-; rtc_get_time - Read real time clock (RTC)
+; rtc_set - Set real time clock
 ; Input:
-;	none
-; Output:
-;	CF set if RTC update is in progress and operation was not performed
-;	CH = BCD hours
-;	CL = BCD minutes
-;	DH = BCD seconds
-;	DL - daylight savings flag: 00h = standard time, 01h = daylight time
-;-------------------------------------------------------------------------
-rtc_get_time:
-	push	ax
-	mov	al,cmos_control_a
-	call	rtc_read		; read control A register
-	test	al,cmos_uip
-	jz	.1			; no update in progess
-	stc
-	pop	ax
-	ret
-.1:
-	mov	al,cmos_control_b
-	call	rtc_read		; read control B register
-	and	al,cmos_dse		; mask the daylight savings bit
-	mov	dl,al
-	mov	al,cmos_seconds
-	call	rtc_read		; read seconds
-	mov	dh,al
-	mov	al,cmos_minutes
-	call	rtc_read		; read minutes
-	mov	cl,al
-	mov	al,cmos_hours
-	call	rtc_read		; read hours
-	mov	ch,al
-	clc
-	pop	ax
-	ret
-
-;=========================================================================
-; rtc_set_time - Set real time clock
-; Input:
-;	CH = BCD hours
-;	CL = BCD minutes
-;	DH = BCD seconds
-;	DL - daylight savings flag: 00h = standard time, 01h = daylight time
+;	cs:[seconds] - pairs of the RTC register number + RTC value
 ; Output:
 ;	None
 ;-------------------------------------------------------------------------
-rtc_set_time:
+rtc_set:
 	push	ax
+	push	cx
+	push	si
+	push	ds
+	mov	ax,cs
+	mov	ds,ax			; DS = CS
 	mov	al,cmos_control_b
 	call	rtc_read		; read control B register
 	mov	ah,al
@@ -461,21 +434,16 @@ rtc_set_time:
 	mov	al,cmos_control_b
 	call	rtc_write		; write control B register
 
-	and	dl,cmos_dse		; mask the daylight saving flag
-	and	ah,~cmos_dse		; clear daylight saving flag for now
-	or	ah,dl			; add it from the input
-	mov	al,cmos_control_b
-	call	rtc_write		; write control B register
+	mov	cx,num_rtc_regs		; number of iterations
+	mov	si,seconds		; the address of the first RTC value
+	cld
 
-	mov	al,cmos_seconds
-	mov	ah,dh
-	call	rtc_write		; write seconds
-	mov	al,cmos_minutes
-	mov	ah,cl
-	call	rtc_write		; write minutes
-	mov	al,cmos_hours
-	mov	ah,ch
-	call	rtc_write		; write hours
+rtc_set_loop:
+	lodsw				; AX = DS:[SI], SI += 2
+					; AL - RTC register number
+					; AH - value to write to the RTC
+	call	rtc_write		; write it to the RTC
+	loop	rtc_set_loop
 
 	mov	al,cmos_control_b
 	call	rtc_read		; read control B register
@@ -483,85 +451,62 @@ rtc_set_time:
 	and	ah,~cmos_set		; clear the RTC set bit
 	mov	al,cmos_control_b
 	call	rtc_write		; write control B register
+	pop	ds
+	pop	si
+	pop	cx
 	pop	ax
 	ret
 
 ;=========================================================================
-; rtc_get_date - Read date from real time clock
+; rtc_get - Get real time clock
 ; Input:
-;	none
+;	cs:[seconds] - pairs of the RTC register number + previous RTC value
 ; Output:
-;	CF set if RTC update is in progress and operation was not performed
-;	CH = BCD century
-;	CL = BCD year
-;	DH = BCD month
-;	DL = BCD date
+;	ZF - time changed from the previous call flag
+;	     ZF = 0 - time not changed
+;	     ZF = 1 - time changed
+;	cs:[seconds] - pairs of the RTC register number + current RTC value
 ;-------------------------------------------------------------------------
-rtc_get_date:
+rtc_get:
 	push	ax
+	push	cx
+	push	dx
+	push	si
+	push	ds
+	mov	ax,cs
+	mov	ds,ax			; DS = CS
+	xor	dx,dx			; reset time changed flag
+
+.wait_for_update:
 	mov	al,cmos_control_a
 	call	rtc_read		; read control A register
 	test	al,cmos_uip
-	jz	.1			; no update in progess
-	stc
-	pop	ax
-	ret
-.1:
-	mov	al,cmos_date
-	call	rtc_read		; read date
-	mov	dl,al
-	mov	al,cmos_month
-	call	rtc_read		; read month
-	mov	dh,al
-	mov	al,cmos_year
-	call	rtc_read		; read year
-	mov	cl,al
-	mov	al,cmos_century
-	call	rtc_read		; read century
-	mov	ch,al
-	clc
-	pop	ax
-	ret
+	loopnz	.wait_for_update	; wait for the update to complete
+	jnz	.exit			; timeout waiting for the update
 
-;=========================================================================
-; rtc_set_date - Set date in real time clock
-; Input:
-;	CH = BCD century
-;	CL = BCD year
-;	DH = BCD month
-;	DL = BCD date
-; Output:
-;	None
-;-------------------------------------------------------------------------
-rtc_set_date:
-	push	ax
-	mov	al,cmos_control_b
-	call	rtc_read		; read control B register
-	mov	ah,al
-	or	ah,cmos_set		; set the RTC set bit
-	mov	al,cmos_control_b
-	call	rtc_write		; write control B register
+	mov	cx,num_rtc_regs		; number of iterations
+	mov	si,seconds		; the address of the first RTC value
+	cld
 
-	mov	al,cmos_date
-	mov	ah,dl
-	call	rtc_write		; write date
+.rtc_get_loop:
+	lodsw				; AX = DS:[SI], SI += 2
+					; AL - RTC register number
+					; AH = previous value
+	call	rtc_read
+	cmp	al,ah			; compare previous and current values
+	je	.rtc_get_loop_continue
+	inc 	dx			; set time changed flag
 
-	mov	al,cmos_month
-	mov	ah,dh
-	call	rtc_write		; write month
-	mov	al,cmos_year
-	mov	ah,cl
-	call	rtc_write		; write year
-	mov	al,cmos_century
-	mov	ah,ch
-	call	rtc_write		; write centry
+.rtc_get_loop_continue:
+	mov	[si-1],al		; save the new value
+	loop	.rtc_get_loop
 
-	mov	al,cmos_control_b
-	call	rtc_read		; read control B register
-	mov	ah,al
-	and	ah,~cmos_set		; clear the RTC set bit
-	mov	al,cmos_control_b
-	call	rtc_write		; write control B register
+.exit:
+	or	dx,dx			; ZF = time changed flag
+	pop	ds
+	pop	si
+	pop	dx
+	pop	cx
 	pop	ax
 	ret
 
@@ -663,7 +608,9 @@ init:
 	call	print_string
 
 ;-------------------------------------------------------------------------
-; Parse the command line - look for a hexadecimal number - I/O port number
+; Parse the command line
+; - look for a hexadecimal number - I/O port number
+; - look for '/' option flag and the following character
 ; Implementation:
 ; - Skip all non-space characters
 ; - Skip all space and tab characters
@@ -677,51 +624,55 @@ init:
 	lds	si,[bx+cmd_addr]	; DS:SI - command line
 	cld
 
-skip_drv_name_loop:
+.skip_drv_name_loop:
 	lodsb
 	cmp	al,' '			; space
-	je	skip_space
+	je	.skip_space
 	cmp	al,09h			; TAB
-	je	skip_space
-	jmp	skip_drv_name_loop
+	je	.skip_space
+	jmp	.skip_drv_name_loop
 
-skip_space_loop:
+.skip_space_loop:
 	lodsb
 
-skip_space:
+.skip_space:
 	cmp	al,' '			; space
-	je	skip_space_loop
+	je	.skip_space_loop
 	cmp	al,09h			; TAB
-	je	skip_space_loop
-	jmp	parse_port
-
-parse_port_loop:
-	lodsb
-
-parse_port:
+	je	.skip_space_loop
 	cmp	al,0Dh			; CR - end of cmdline, stop parsing
-	je	port_check
+	je	.port_check
 	cmp	al,0Ah			; LF - end of cmdline, stop parsing
-	je	port_check
-	or	al,20h			; convert letters to lower case
-	cmp	al,'x'			; hexadecimal identifier?
-	je	use_hex
-	cmp	al,'0'
+	je	.port_check
+	cmp	al,'/'			; '/' - options should follow
+	je	.parse_options
+	or	dx,dx			; port number already has been set?
+	jnz	invalid_argument
+	cmp	al,'0'			; otherwise we expect a number...
 	jb	invalid_argument
 	cmp	al,'9'
-	ja	above_nine
-	sub	al,'0'			; convert to binary
-	jmp	add_digit
+	ja	invalid_argument
+	jmp	.parse_port
 
-use_hex:
-	cmp	cl,0			; already seen a hexdecimal identifier?
+.parse_options:
+	lodsb
+	or	al,20h			; convert letters to lower case
+	cmp	al,'d'			; DSE option?
 	jne	invalid_argument
-	cmp	dx,0			; hex flag after a non-zero number?
-	jne	invalid_argument
-	inc	cl			; set hexadecimal flag
-	jmp	parse_port_loop
+	mov	byte cs:[dse],cmos_dse	; set DSE option
+	jmp	.skip_space_loop	; continue parsing command line args
 
-above_nine:
+.parse_port_loop:
+	lodsb
+
+.parse_port:
+	cmp	al,'0'			; below '0'?
+	jb	.skip_space		; check for Space, TAB, CR, LF, '/'...
+	cmp	al,'9'
+	jna	.add_digit		; between '0' and '9' - add a digit
+	or	al,20h			; convert letters to lower case
+	cmp	al,'x'			; hexadecimal identifier?
+	je	.use_hex
 	cmp	cl,0			; hex flag not set, but not a decimal?
 	je	invalid_argument
 	cmp	al,'a'
@@ -730,17 +681,18 @@ above_nine:
 	ja	invalid_argument
 	sub	al,'a'-10		; convert to binary
 
-add_hex_digit:
+.add_hex_digit:
 	shl	dx,1			; DX = DX << 4
 	shl	dx,1
 	shl	dx,1
 	shl	dx,1
 	add	dl,al			; add the digit
-	jmp	parse_port_loop
+	jmp	.parse_port_loop
 
-add_digit:
+.add_digit:
+	sub	al,'0'			; convert to binary
 	cmp	cl,0			; hex flag is set?
-	jne	add_hex_digit		; then add a hex digit
+	jne	.add_hex_digit		; then add a hex digit
 	push	ax
 	mov	ax,10
 	mul	dx			; DX:AX = DX * 10
@@ -748,18 +700,30 @@ add_digit:
 	pop	ax
 	mov	ah,0
 	add	dx,ax			; add the digit
-	jmp	parse_port_loop
+	jmp	.parse_port_loop
 
-port_check:
+.use_hex:
+	cmp	cl,0			; already seen a hexdecimal identifier?
+	jne	invalid_argument
+	cmp	dx,0			; hex flag after a non-zero number?
+	jne	invalid_argument
+	inc	cl			; set hexadecimal flag
+	jmp	.parse_port_loop
+
+.port_check:
 	cmp	dx,0
-	jnz	port_check_range
+	jnz	.port_check_range
 	mov	dx,default_io_port	; DX==0, load the default address
 
-port_check_range:
+.port_check_range:
+	cmp	dx,70h			; I/O port can be 70h on
+					; Micro 8088 / NuXT without 8088 BIOS?!
+	je	.port_ok
 	cmp	dx,3FEh			; I/O port shouldn't be above 3FEh
 	ja	invalid_port
 	cmp	dx,200h			; I/O port shouldn't be below 200h
 	jb	invalid_port
+.port_ok:
 	pop	ds
 	mov	cs:[rtc_io_port],dx	; store the port address
 
@@ -777,13 +741,11 @@ port_check_range:
 
 ; Continue with the RTC initialization
 
+	mov	ah,cmos_24hours		; set 24 hours bit, select CD format
+					; and keep interrupts disabled
+	or	ah,cs:[dse]		; set DSE bit according to the cmd opt.
 	mov	al,cmos_control_b
-	call	rtc_read
-	mov	ah,al
-	and	ah,cmos_dse		; clear all bits except of DSE
-	or	ah,cmos_24hours		; set 24 hours bit, keep BCD format and
-					; interrupts disabled
-	mov	al,cmos_control_b
+
 	call	rtc_write		; write control register B
 
 	mov	al,cmos_control_c
@@ -793,36 +755,102 @@ port_check_range:
 	mov	al,cmos_control_d
 	call	rtc_read		; read control register D
 	test	al,cmos_vrt
-	jnz	battery_good		; RTC battery is good
+	jnz	.battery_good		; RTC battery is good
 
 ; Battery is bad
 
 	mov	dx,msg_rtc_batt
 	call	print_string
 
-; Set initial time
+; Set initial time and date - Monday, January 1st, 2024, 00:00:00
 
-	xor	cx,cx			; 00:00:00
-	xor	dx,dx
-	call	rtc_set_time
+.reset_clock:
+	mov	dx,msg_rtc_inval
+	call	print_string
+	mov	byte cs:[century+1],20h	; 20h
+	mov	byte cs:[year+1],24h	; 24h
+	mov	byte cs:[month+1],1	; January
+	mov	byte cs:[date+1],1	; 1st
+	mov	byte cs:[day+1],2	; Monday
+	mov	byte cs:[hours+1],0
+	mov	byte cs:[minutes+1],0
+	mov	byte cs:[seconds+1],0
+	call	rtc_set
 
-	mov	cx,2020h		; year 2020
-	mov	dx,0101h		; January 1st
-	call	rtc_set_date
-
-battery_good:
+.battery_good:
 
 ;-------------------------------------------------------------------------
 ; Set BIOS timer variables to RTC time
 
-	push	bx
+	call	rtc_get
 
-	call	rtc_get_time
+; Validate date and time
+
+	mov	al,cs:[century+1]
+	call	bcd_to_binary
+	cmp	al,20			; century must be between 19 and 20
+	ja	.reset_clock
+	cmp	al,19
+	jb	.reset_clock
+
+	mov	al,cs:[year+1]
+	call	bcd_to_binary
+	cmp	al,99			; year must be between 0 and 99
+	ja	.reset_clock
+	mov	cl,al			; save the year value in CL
+
+	mov	al,cs:[month+1]
+	cmp	al,12			; month must be between 1 and 12
+	ja	.reset_clock
+	cmp	al,1
+	jb	.reset_clock
+	mov	ch,al			; save the month value to CH
+
+; check for February in a leap year
+
+	mov	ah,0
+	dec	al			; AX - month 0 to 11
+	mov	si,days_in_month
+	add	si,ax			; [SI] - days in the current month
+	mov	al,cs:[date+1]
+	call	bcd_to_binary
+	cmp	al,1			; day must be above or equal to 1
+	jb	.reset_clock
+	mov	ah,cs:[si]		; AH - number of days in the month
+	cmp	ch,2			; is it Febuary?
+	jne	.check_date
+	or	cl,3			; is it a leap year
+	jnz	.check_date
+	inc	ah			; increment number of days for leap year
+
+.check_date:
+	cmp	al,ah			; AL - current date
+	ja	.reset_clock		; AH - days in this month
+
+	mov	al,cs:[day+1]
+	cmp	al,7			; day must be between 1 and 7
+	ja	.reset_clock
+	cmp	al,1
+	jb	.reset_clock
+	mov	al,cs:[hours+1]
+	call	bcd_to_binary
+	cmp	al,23			; hours must be between 0 and 23
+	ja	.reset_clock
+	mov	al,cs:[minutes+1]
+	call	bcd_to_binary
+	cmp	al,59			; minutes must be between 0 and 59
+	ja	.reset_clock
+	mov	al,cs:[seconds+1]
+	call	bcd_to_binary
+	cmp	al,59			; seconds must be between 0 and 59
+	ja	.reset_clock
+
+	push	bx
 
 ; convert time to ticks * 2^11
 
 ; ticks = seconds * 37287
-	mov	al,dh
+	mov	al,cs:[seconds+1]
 	call	bcd_to_binary		; convert seconds to binary
 
 	mov	dx,37287
@@ -832,7 +860,7 @@ battery_good:
 	mov	di,dx
 
 ; ticks += minutes * 2237216 = minutes * 8992 + minutes * 34 * 2^16
-	mov	al,cl
+	mov	al,cs:[minutes+1]
 	call	bcd_to_binary		; convert minutes to binary
 
 	mov	bx,ax
@@ -849,7 +877,7 @@ battery_good:
 	add	di,ax
 
 ; ticks += hours * 134232938 = hours * 15210 + hours * 2048 * 2^16
-	mov	al,ch
+	mov	al,cs:[hours+1]
 	call	bcd_to_binary		; convert hours to binary
 
 	mov	bx,ax
@@ -876,10 +904,8 @@ battery_good:
 	mov	cl,11
 	shr	di,cl
 	mov	cx,di
-
 					; CX = high word of tick count
 					; DX = low word of tick count
-	
 	mov	ah,01h			; int 1Ah, function 01h - set time
 	int	1Ah
 	pop	bx
@@ -897,48 +923,47 @@ battery_good:
 	mov	dx,msg_rtc_time
 	call	print_string
 
-	call	rtc_get_date		; read RTC date
-					; CH = BCD century
-					; CL = BCD year
-					; DH = BCD month
-					; DL = BCD date (day of the month)
-	mov	ax,cx
+	mov	ah,cs:[century+1]
+	mov	al,cs:[year+1]
 	call	print_hex		; print 4-digit year
 
 	mov	al,'-'			; print a dash (-)
 	call	print_char
 
-	mov	al,dh
+	mov	al,cs:[month+1]
 	call	print_byte		; print 2-digit month
 
 	mov	al,'-'			; print a dash (-)
 	call	print_char
 
-	mov	al,dl
+	mov	al,cs:[date+1]
 	call	print_byte		; print 2-digit date
 
 	mov	al,' '			; print a space
 	call	print_char
 
-	call	rtc_get_time		; read RTC time
-					; CH = BCD hours
-					; CL = BCD minutes
-					; DH = BCD seconds
-					; DL = daylight saving flag
-	mov	al,ch
+	mov	al,cs:[hours+1]
 	call	print_byte		; print 2-digit hours
 	
 	mov	al,':'			; print a colon (:)
 	call	print_char
 
-	mov	al,cl
+	mov	al,cs:[minutes+1]
 	call	print_byte		; print 2-digit minutes
 	
 	mov	al,':'			; print a colon (:)
 	call	print_char
 
-	mov	al,dh
+	mov	al,cs:[seconds+1]
 	call	print_byte		; print 2-digit seconds
+
+	mov	dx,msg_rtc_dse_ena	; assume DSE is enabled
+	cmp	byte cs:[dse],cmos_dse	; is it really enabled?
+	je	.print_dse
+	mov	dx,msg_rtc_dse_dis
+
+.print_dse:
+	call	print_string
 
 	mov	dx,msg_cr_lf
 	call	print_string
@@ -1073,17 +1098,25 @@ print_digit:
 ;=========================================================================
 ; Messages for the initialization routine
 
-msg_signin	db	'DS12885 RTC Driver, Version 1.0. '
+msg_signin	db	'DS12885 RTC Driver, Version 1.1. '
 		db	'Copyright (C) 2024 Sergey Kiselev'
 		db	0Dh, 0Ah, '$'
-msg_rtc_port	db	'Using RTC at the I/O port 0x$'
-msg_rtc_time	db	'. Date and time: $'
-msg_rtc_batt	db	07h, 'Warning: The RTC battery is bad', 0Dh, 0Ah, '$'
+msg_rtc_port	db	'RTC at the I/O port 0x$'
+msg_rtc_time	db	'; Date and time: $'
+msg_rtc_dse_ena	db	'; DSE enabled$'
+msg_rtc_dse_dis	db	'; DSE disabled$'
+msg_rtc_batt	db	'Warning: The RTC battery is bad', 0Dh, 0Ah, '$'
+msg_rtc_inval	db	07h, 'Warning: Invalid date or time. '
+		db	'Setting to default values', 0Dh, 0Ah, '$'
 msg_no_rtc	db	07h, 'Error: No RTC detected at the I/O port 0x$'
 msg_inv_port	db	07h, 'Error: Invalid port number 0x$'
 msg_inv_arg	db	07h, 'Error: Invalid command line argument'
-msg_usage	db	0Dh, 0Ah, 'Usage: DSCLOCK.SYS [port]', 0Dh, 0Ah
+msg_usage	db	0Dh, 0Ah, 'Usage: DSCLOCK.SYS [port] [/D]', 0Dh, 0Ah
 		db	'  port - decimal or hexadecimal RTC I/O port number.'
-		db	0Dh, 0Ah, '  Supported port range is 0x200 - 0x3FF'
-		db	0Dh, 0Ah, 'Example: DSCLOCK.SYS 0x240'
+		db	0Dh, 0Ah, '    Supported port range is 0x200 - 0x3FF'
+		db	0Dh, 0Ah, '  /D   - enable daylight saving.'
+		db	0Dh, 0Ah, 'Example: DSCLOCK.SYS 0x240 /D'
 msg_cr_lf	db	0Dh, 0AH, '$'
+
+; Data for the initialization routine
+dse		db	0		; DSE flag: 0 - disable; 1 - enable
