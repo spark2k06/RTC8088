@@ -800,6 +800,7 @@ init:
 	mov	cl,al			; save the year value in CL
 
 	mov	al,cs:[month+1]
+	call	bcd_to_binary
 	cmp	al,12			; month must be between 1 and 12
 	ja	.reset_clock
 	cmp	al,1
